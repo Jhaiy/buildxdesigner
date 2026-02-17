@@ -1,0 +1,227 @@
+"use client"
+
+import type React from "react"
+import { useState } from "react"
+import { useDrag } from "react-dnd"
+import { Separator } from "./ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
+import { BlocksPalette } from "./BlocksPalette"
+import {
+  Type,
+  Square,
+  ImageIcon,
+  Navigation,
+  MousePointer,
+  FileText,
+  Mail,
+  Menu,
+  Grid3X3,
+  Video,
+  Blocks,
+  Code2,
+  CreditCard,
+} from "lucide-react"
+import type { ComponentData } from "../App"
+import { ChevronLeft } from "lucide-react"
+
+interface DraggableComponentProps {
+  type: string
+  icon: React.ReactNode
+  label: string
+  props?: Record<string, any>
+}
+
+function DraggableComponent({ type, icon, label, props = {} }: DraggableComponentProps) {
+  const [{ isDragging }, drag] = useDrag({
+    type: "component",
+    item: { type, props },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  })
+
+  return (
+    <div
+      ref={drag}
+      className={`p-2 border rounded-md cursor-move hover:bg-accent transition-colors ${isDragging ? "opacity-50" : ""
+        }`}
+    >
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-xs">{label}</span>
+      </div>
+    </div>
+  )
+}
+
+interface SidebarProps {
+  onAddComponent: (component: ComponentData) => void
+  onToggle?: () => void
+}
+
+export function Sidebar({ onAddComponent, onToggle }: SidebarProps) {
+  const [searchTerm, setSearchTerm] = useState("")
+  const basicComponents = [
+    { type: "text", icon: <Type className="w-3.5 h-3.5" />, label: "Text", props: { content: "Sample Text" } },
+    {
+      type: "heading",
+      icon: <Type className="w-3.5 h-3.5" />,
+      label: "Heading",
+      props: { content: "Heading", level: 1 },
+    },
+    {
+      type: "button",
+      icon: <MousePointer className="w-3.5 h-3.5" />,
+      label: "Button",
+      props: { text: "Click Me", variant: "default" },
+    },
+    {
+      type: "image",
+      icon: <ImageIcon className="w-3.5 h-3.5" />,
+      label: "Image",
+      props: { src: "", alt: "Image", width: 300, height: 200 },
+    },
+    { type: "container", icon: <Square className="w-3.5 h-3.5" />, label: "Container", props: {} },
+  ]
+
+  const layoutComponents = [
+    {
+      type: "navbar",
+      icon: <Navigation className="w-3.5 h-3.5" />,
+      label: "Navigation Bar",
+      props: { brand: "Brand", links: ["Home", "About", "Contact"] },
+    },
+    {
+      type: "hero",
+      icon: <FileText className="w-3.5 h-3.5" />,
+      label: "Hero Section",
+      props: { title: "Welcome", subtitle: "Build amazing websites" },
+    },
+    {
+      type: "footer",
+      icon: <Menu className="w-3.5 h-3.5" />,
+      label: "Footer",
+      props: { copyright: "© 2024 Your Company" },
+    },
+    { type: "grid", icon: <Grid3X3 className="w-3.5 h-3.5" />, label: "Grid Layout", props: { columns: 3 } },
+  ]
+
+  const formComponents = [
+    {
+      type: "input",
+      icon: <FileText className="w-3.5 h-3.5" />,
+      label: "Input Field",
+      props: { placeholder: "Enter text...", type: "text" },
+    },
+    {
+      type: "textarea",
+      icon: <FileText className="w-3.5 h-3.5" />,
+      label: "Text Area",
+      props: { placeholder: "Enter message..." },
+    },
+    { type: "form", icon: <Mail className="w-3.5 h-3.5" />, label: "Contact Form", props: { title: "Contact Us" } },
+  ]
+
+  const mediaComponents = [
+    { type: "video", icon: <Video className="w-3.5 h-3.5" />, label: "Video", props: { src: "", poster: "" } },
+    { type: "gallery", icon: <ImageIcon className="w-3.5 h-3.5" />, label: "Image Gallery", props: { images: [] } },
+  ]
+
+  return (
+    <div id="sidebar-palette" className="w-full bg-card flex flex-col h-full overflow-hidden sidebar-compact relative">
+      {onToggle && (
+        <button
+          onClick={onToggle}
+          className="absolute top-3 right-3 z-10 p-1.5 rounded-md hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          title="Collapse sidebar (Ctrl+B)"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+      )}
+
+      <Tabs defaultValue="blocks" className="flex flex-col h-full overflow-hidden">
+        <div className="border-b p-3 flex-shrink-0">
+          <TabsList className="grid w-full grid-cols-2 h-8">
+            <TabsTrigger value="blocks" className="flex items-center gap-1.5 text-xs h-7">
+              <Blocks className="w-3.5 h-3.5" />
+              Blocks
+            </TabsTrigger>
+            <TabsTrigger value="components" className="flex items-center gap-1.5 text-xs h-7">
+              <Code2 className="w-3.5 h-3.5" />
+              Components
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="blocks" className="flex-1 mt-0 border-0 p-0 overflow-hidden">
+          <BlocksPalette onSelectBlock={onAddComponent} searchTerm={searchTerm} onSearchChange={setSearchTerm} />
+        </TabsContent>
+
+        <TabsContent value="components" className="flex-1 mt-0 border-0 p-3 overflow-y-auto">
+          <div className="space-y-3">
+            <div>
+              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Basic Elements</h4>
+              <div className="space-y-1.5">
+                {basicComponents.map((component) => (
+                  <DraggableComponent key={component.type} {...component} />
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Layout</h4>
+              <div className="space-y-1.5">
+                {layoutComponents.map((component) => (
+                  <DraggableComponent key={component.type} {...component} />
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Forms</h4>
+              <div className="space-y-1.5">
+                {formComponents.map((component) => (
+                  <DraggableComponent key={component.type} {...component} />
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Media</h4>
+              <div className="space-y-1.5">
+                {mediaComponents.map((component) => (
+                  <DraggableComponent key={component.type} {...component} />
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Integrations</h4>
+              <div className="space-y-1.5">
+                <DraggableComponent
+                  type="paymongo-button"
+                  icon={<CreditCard className="w-3.5 h-3.5" />}
+                  label="PayMongo Button"
+                  props={{
+                    label: "Buy Now",
+                    amount: 100,
+                    description: "Product Purchase",
+                    currency: "PHP"
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
