@@ -117,8 +117,6 @@ export function useEditorState() {
   });
 
   const collaboration = useCollaboration({
-    projectId: state.currentProjectId ?? "",
-    currentProjectId: state.currentProjectId,
     setState,
     state,
   });
