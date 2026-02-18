@@ -343,19 +343,6 @@ export function useEditorState() {
     })();
   }, [state.currentProjectId]);
 
-  /*
-   * Removed auto-load project logic (lines 359-389)
-   * Removed Ably logic (lines 391-485)
-   * logic handled by useCollaboration
-   */
-
-  // ==================== AUTO-SAVE ====================
-
-  /*
-   * Removed auto-save logic (lines 489-537)
-   * handled by useCollaboration
-   */
-
   // ==================== THEME ====================
 
   useEffect(() => {
@@ -488,7 +475,6 @@ export function useEditorState() {
   };
 
   const openProject = (projectId: string, projectName?: string) => {
-    replaceComponents([], false);
     setState((prev) => ({
       ...prev,
       currentView: "editor",

@@ -46,9 +46,38 @@ export function initializeCollaborationTransport(
     Y.applyUpdate(ydoc, update, "remote");
   };
 
-  const handleSyncRequest = () => {
+  const handleSyncRequest = (message?: { data?: { clientId?: string } }) => {
+    if (message?.data?.clientId === client.clientId) return;
+    const yComponents = ydoc.getArray("components");
+    if (yComponents.length === 0) return;
     const fullUpdate = Y.encodeStateAsUpdate(ydoc);
     channel.publish("yjs-sync", encodeUpdate(fullUpdate));
+  };
+
+  const hydrateFromHistory = async () => {
+    try {
+      const history = await channel.history({ limit: 50 });
+      const messages = history.items ?? [];
+
+      for (const message of messages) {
+        if (message.name !== "yjs-update" && message.name !== "yjs-sync") {
+          continue;
+        }
+        if (!message.data || typeof message.data !== "string") {
+          continue;
+        }
+
+        const update = decodeUpdate(message.data);
+        Y.applyUpdate(ydoc, update, "remote");
+
+        const yComponents = ydoc.getArray("components");
+        if (yComponents.length > 0) {
+          break;
+        }
+      }
+    } catch (error) {
+      console.warn("Failed to hydrate collaboration history:", error);
+    }
   };
 
   let awarenessTimeout: NodeJS.Timeout | null = null;
@@ -86,7 +115,9 @@ export function initializeCollaborationTransport(
   channel.subscribe("yjs-request-sync", handleSyncRequest as any);
   channel.subscribe("yjs-awareness", handleRemoteAwareness as any);
 
-  channel.publish("yjs-request-sync", { clientId: client.clientId });
+  hydrateFromHistory().finally(() => {
+    channel.publish("yjs-request-sync", { clientId: client.clientId });
+  });
 
   return () => {
     if (updateTimeout) clearTimeout(updateTimeout);

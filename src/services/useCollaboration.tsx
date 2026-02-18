@@ -7,6 +7,7 @@ import {
   saveProject,
   fetchProjectById,
   fetchProjectComponents,
+  syncProjectComponents,
 } from "../supabase/data/projectService";
 import type { ComponentData, EditorState } from "../types/editor";
 import { initializeCollaborationDoc } from "./CollaborationDoc";
@@ -63,14 +64,36 @@ function useCollaborationLogic({
   const ablyKey = import.meta.env.VITE_ABLY_KEY as string | undefined;
   const activeProjectId = currentProjectId ?? state.currentProjectId ?? null;
   const hydratedProjectRef = useRef<string | null>(null);
+  const docProjectIdRef = useRef<string | null>(null);
   const isHydratingRef = useRef(false);
+
+  useEffect(() => {
+    if (state.currentView !== "editor") {
+      hydratedProjectRef.current = null;
+    }
+  }, [state.currentView]);
+
+  useEffect(() => {
+    if (state.currentView !== "editor") return;
+    if (!activeProjectId) return;
+
+    if (
+      docProjectIdRef.current &&
+      docProjectIdRef.current !== activeProjectId
+    ) {
+      replaceComponents([], false);
+      hydratedProjectRef.current = null;
+    }
+
+    docProjectIdRef.current = activeProjectId;
+  }, [state.currentView, activeProjectId, replaceComponents]);
 
   useEffect(() => {
     const { yComponents } = getOrInitDoc();
     const handleYComponentsChange = () => {
       const components = yComponents.toArray();
       const isLocalChanges = consumeLocalChangeFlag();
-      if (isHydratingRef.current) return;
+      if (isHydratingRef.current && components.length === 0) return;
       setState((prev) => ({
         ...prev,
         components: components,
@@ -154,58 +177,107 @@ function useCollaborationLogic({
     if (!activeProjectId) return;
     if (hydratedProjectRef.current === activeProjectId) return;
 
+    let cancelled = false;
+    isHydratingRef.current = true;
+
     (async () => {
-      const { data: projectData, error: projectError } =
-        await fetchProjectById(activeProjectId);
+      try {
+        const { yComponents } = getOrInitDoc();
 
-      if (projectError || !projectData) {
-        isHydratingRef.current = false;
-        return;
+        if (yComponents.length > 0) {
+          hydratedProjectRef.current = activeProjectId;
+          setState((prev) => ({
+            ...prev,
+            components: yComponents.toArray(),
+            hasUnsavedChanges: false,
+          }));
+          return;
+        }
+
+        const [
+          { data: projectData, error: projectError },
+          { data: componentsData },
+        ] = await Promise.all([
+          fetchProjectById(activeProjectId),
+          fetchProjectComponents(activeProjectId),
+        ]);
+
+        if (cancelled) return;
+        const loadedProject =
+          componentsData && componentsData.length > 0
+            ? componentsData
+            : ((projectData?.project_layout as any[]) ?? []);
+
+        const canHydrateFromDatabase =
+          loadedProject.length > 0 || !projectError;
+        if (!canHydrateFromDatabase) {
+          return;
+        }
+
+        const hasRemoteOrLocalData = yComponents.length > 0;
+        if (!hasRemoteOrLocalData) {
+          replaceComponents(loadedProject, false);
+        }
+
+        const finalComponents = yComponents.toArray();
+        hydratedProjectRef.current = activeProjectId;
+
+        setState((prev) => ({
+          ...prev,
+          projectName:
+            (projectData as any)?.project_name ??
+            (projectData as any)?.name ??
+            prev.projectName,
+          components: finalComponents,
+          hasUnsavedChanges: false,
+        }));
+      } finally {
+        if (!cancelled) {
+          const { yComponents } = getOrInitDoc();
+          setState((prev) => ({
+            ...prev,
+            components: yComponents.toArray(),
+          }));
+          isHydratingRef.current = false;
+        }
       }
-      const { data: componentsData } =
-        await fetchProjectComponents(activeProjectId);
-
-      const loadedProject =
-        componentsData && componentsData.length > 0
-          ? componentsData
-          : ((projectData.project_layout as any[]) ?? []);
-
-      replaceComponents(loadedProject, false);
-      hydratedProjectRef.current = activeProjectId;
-
-      setState((prev) => ({
-        ...prev,
-        projectName:
-          (projectData as any).project_name ??
-          (projectData as any).name ??
-          prev.projectName,
-        components: loadedProject,
-      }));
-
-      isHydratingRef.current = false;
     })();
-  }, [state.currentView, activeProjectId, replaceComponents, setState]);
+
+    return () => {
+      cancelled = true;
+      isHydratingRef.current = false;
+    };
+  }, [
+    state.currentView,
+    state.currentUser?.id,
+    activeProjectId,
+    replaceComponents,
+    setState,
+  ]);
 
   useEffect(() => {
     if (state.currentView !== "editor" || !ablyKey) return;
-    if (!state.currentProjectId) return;
-    if (!ablyKey) return;
+    if (!activeProjectId) return;
 
     const { ydoc, awareness } = getOrInitDoc();
     const cleanup = initializeCollaborationTransport(
       ydoc,
       awareness,
-      state.currentProjectId,
+      activeProjectId,
       ablyKey,
     );
 
     return () => {
       if (typeof cleanup === "function") cleanup();
     };
-  }, [state.currentView, state.currentProjectId, ablyKey, getOrInitDoc]);
+  }, [state.currentView, activeProjectId, ablyKey, getOrInitDoc]);
 
   useEffect(() => {
-    if (!state.hasUnsavedChanges || state.currentView !== "editor") {
+    if (
+      !state.hasUnsavedChanges ||
+      state.currentView !== "editor" ||
+      state.isSaving
+    ) {
       return;
     }
 
@@ -219,17 +291,57 @@ function useCollaborationLogic({
           data: { session },
         } = await getSupabaseSession();
         const user_id = session?.user?.id;
+        let persisted = false;
+
+        const { yComponents } = getOrInitDoc();
+        const currentComponents = yComponents.toArray();
 
         if (user_id) {
-          const { yComponents } = getOrInitDoc();
-          const currentComponents = yComponents.toArray();
-
-          await saveProject({
+          const { error: saveError } = await saveProject({
             id: state.currentProjectId,
             name: state.projectName || "Untitled Project",
             user_id,
             project_layout: currentComponents,
           });
+
+          persisted = !saveError;
+          if (saveError) {
+            console.warn(
+              "Project save failed, trying component sync:",
+              saveError,
+            );
+          }
+        }
+
+        if (persisted) {
+          const { error: syncAfterSaveError } = await syncProjectComponents(
+            currentComponents,
+            state.currentProjectId,
+          );
+
+          if (syncAfterSaveError) {
+            console.warn(
+              "Component sync after project save failed:",
+              syncAfterSaveError,
+            );
+          }
+        }
+
+        if (!persisted) {
+          const { error: syncError } = await syncProjectComponents(
+            currentComponents,
+            state.currentProjectId,
+          );
+
+          persisted = !syncError;
+          if (syncError) {
+            throw syncError;
+          }
+        }
+
+        if (!persisted) {
+          setState((prev) => ({ ...prev, isSaving: false }));
+          return;
         }
 
         setState((prev) => ({
@@ -251,6 +363,7 @@ function useCollaborationLogic({
     state.currentProjectId,
     state.projectName,
     state.hasUnsavedChanges,
+    state.isSaving,
   ]);
 
   return {
