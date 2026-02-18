@@ -1,5 +1,50 @@
 "use client";
 
+/*
+ * ┌────────────────────────────────────────────────────────────────────────────┐
+ * │ REFACTOR PLAN: Split into 3 modules                                       │
+ * ├────────────────────────────────────────────────────────────────────────────┤
+ * │                                                                            │
+ * │ MODULE 1: src/services/collaboration/collabDoc.ts                          │
+ * │ ──────────────────────────────────────────────────────────────────────────│
+ * │ Purpose: Yjs CRDT document lifecycle + component mutations                │
+ * │ Extract:                                                                   │
+ * │   - Lines 56-79:  getOrInitDoc(), replaceComponents()                     │
+ * │   - Lines 330-432: addComponent(), updateComponent(), deleteComponent(),  │
+ * │                    selectComponent(), reorderComponent(), clearCanvas()   │
+ * │   - Refs: ydocRef, yComponentsRef, awarenessRef, localChangeRef           │
+ * │ Exports:                                                                   │
+ * │   - createCollabDoc(setState) -> object with all mutation methods         │
+ * │                                                                            │
+ * ├────────────────────────────────────────────────────────────────────────────┤
+ * │                                                                            │
+ * │ MODULE 2: src/services/collaboration/collabTransport.ts                    │
+ * │ ──────────────────────────────────────────────────────────────────────────│
+ * │ Purpose: Ably realtime pub/sub transport (WebSocket layer)                │
+ * │ Extract:                                                                   │
+ * │   - Lines 56-62:  encodeUpdate(), decodeUpdate() binary codecs            │
+ * │   - Lines 201-299: Entire Ably effect (channel subscribe/publish)         │
+ * │ Exports:                                                                   │
+ * │   - connectAblyTransport(ydoc, awareness, roomId, ablyKey) -> cleanup fn  │
+ * │                                                                            │
+ * ├────────────────────────────────────────────────────────────────────────────┤
+ * │                                                                            │
+ * │ MODULE 3: src/services/collaboration/useCollaboration.ts (this file)      │
+ * │ ──────────────────────────────────────────────────────────────────────────│
+ * │ Purpose: React hook glue (effects + state bridge)                         │
+ * │ Keep:                                                                      │
+ * │   - Lines 82-106:  Yjs→React bridge effect                                │
+ * │   - Lines 108-133: Awareness identity bootstrap                           │
+ * │   - Lines 135-172: Cursor publish + awareness→UI mapping                  │
+ * │   - Lines 174-199: Project hydration from DB                              │
+ * │   - Lines 301-328: Auto-save effect                                       │
+ * │   - remoteCursors state                                                   │
+ * │   - clientIdRef, userColorRef (awareness identity)                        │
+ * │ Import from modules 1 & 2, wire with useEffect                            │
+ * │                                                                            │
+ * └────────────────────────────────────────────────────────────────────────────┘
+ */
+
 import type React from "react";
 import { useState, useEffect, useRef, createContext, useContext } from "react";
 import Ably from "ably";
@@ -16,6 +61,7 @@ import {
   fetchProjectComponents,
 } from "../supabase/data/projectService";
 import type { ComponentData, EditorState } from "../types/editor";
+import { initializeCollaborationDoc } from "./CollaborationDoc";
 
 type CollaborationContextType = ReturnType<typeof useCollaborationLogic>;
 const CollaborationContext = createContext<CollaborationContextType | null>(
@@ -34,14 +80,24 @@ function useCollaborationLogic({
   state,
 }: UseCollaborationProps) {
   const currentUser = state.currentUser;
-
-  const ydocRef = useRef<Y.Doc | null>(null);
-  const yComponentsRef = useRef<Y.Array<ComponentData> | null>(null);
-  const awarenessRef = useRef<Awareness | null>(null);
-  const localChangeRef = useRef(false);
   const clientIdRef = useRef<string | null>(null);
   const userColorRef = useRef<string | null>(null);
   const cursorPosRef = useRef({ x: 0, y: 0 });
+
+  const initCollaborationDoc = useRef(
+    initializeCollaborationDoc(setState),
+  ).current;
+
+  const {
+    getOrInitDoc,
+    replaceComponents,
+    addComponent,
+    updateComponent,
+    deleteComponent,
+    selectComponent,
+    reorderComponent,
+    clearCanvas,
+  } = initCollaborationDoc;
 
   const [remoteCursors, setRemoteCursors] = useState<
     Map<string, { clientId: string; user: any; x: number; y: number }>
@@ -49,37 +105,21 @@ function useCollaborationLogic({
 
   const ablyKey = import.meta.env.VITE_ABLY_KEY as string | undefined;
 
+  // ─── MODULE 2: collabTransport.ts ────────────────────────────────────────
+  // EXTRACT: Binary codecs for Yjs updates over Ably
   const encodeUpdate = (update: Uint8Array) =>
     btoa(String.fromCharCode(...Array.from(update)));
 
   const decodeUpdate = (data: string) =>
     Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const getOrInitDoc = () => {
-    if (!ydocRef.current) {
-      ydocRef.current = new Y.Doc();
-      yComponentsRef.current =
-        ydocRef.current.getArray<ComponentData>("components");
-      awarenessRef.current = new Awareness(ydocRef.current);
-    }
-    return {
-      ydoc: ydocRef.current,
-      yComponents: yComponentsRef.current!,
-      awareness: awarenessRef.current!,
-    };
-  };
+  // ─── MODULE 1: collabDoc.ts ──────────────────────────────────────────────
+  // EXTRACT: Yjs document initialization + component replacement
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const replaceComponents = (components: ComponentData[], markLocal = true) => {
-    const { yComponents } = getOrInitDoc();
-    if (markLocal) {
-      localChangeRef.current = true;
-    }
-    yComponents.delete(0, yComponents.length);
-    if (components.length > 0) {
-      yComponents.push(components);
-    }
-  };
-
+  // ─── MODULE 3: useCollaboration.ts (KEEP HERE) ───────────────────────────
+  // React effect: Yjs → React state bridge
   useEffect(() => {
     const { yComponents } = getOrInitDoc();
 
@@ -103,6 +143,8 @@ function useCollaborationLogic({
     };
   }, [setState]);
 
+  // ─── MODULE 3: useCollaboration.ts (KEEP HERE) ───────────────────────────
+  // React effect: Awareness identity bootstrap
   useEffect(() => {
     const { awareness } = getOrInitDoc();
 
@@ -129,6 +171,8 @@ function useCollaborationLogic({
     });
   }, [currentUser]);
 
+  // ─── MODULE 3: useCollaboration.ts (KEEP HERE) ───────────────────────────
+  // Cursor publish + awareness → UI cursor mapping
   const handleCanvasMouseMove = (e: MouseEvent) => {
     const { awareness } = getOrInitDoc();
     awareness.setLocalStateField("cursor", {
@@ -165,6 +209,8 @@ function useCollaborationLogic({
       awareness.off("change", handleAwarenessChange);
       document.removeEventListener("mousemove", handleCanvasMouseMove);
     };
+    // ─── MODULE 3: useCollaboration.ts (KEEP HERE) ───────────────────────────
+    // React effect: Project hydration from DB
   }, []);
 
   useEffect(() => {
@@ -194,6 +240,8 @@ function useCollaborationLogic({
         }));
       }
     })();
+    // ─── MODULE 2: collabTransport.ts ────────────────────────────────────────
+    // EXTRACT: Ably realtime transport (channel subscribe/publish lifecycle)
   }, [state.currentView, state.currentProjectId]);
 
   useEffect(() => {
@@ -287,7 +335,10 @@ function useCollaborationLogic({
       channel.unsubscribe("yjs-awareness", handleRemoteAwareness as any);
       ydoc.off("update", handleDocUpdate);
       awareness.off("update", handleAwarenessUpdate);
-      channel.detach();
+      // ─────────────────────────────────────────────────────────────────────────
+
+      // ─── MODULE 3: useCollaboration.ts (KEEP HERE) ───────────────────────────
+      // React effect: Auto-save to Supabase      channel.detach();
       client.close();
     };
   }, [ablyKey, state.currentProjectId, state.currentView]);
@@ -335,89 +386,15 @@ function useCollaborationLogic({
     return () => clearTimeout(autoSaveTimer);
   }, [
     state.components,
-    state.hasUnsavedChanges,
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ─── MODULE 1: collabDoc.ts ──────────────────────────────────────────────
+    // EXTRACT: Component mutation operations (add/update/delete/reorder/clear)    state.hasUnsavedChanges,
     state.currentView,
     state.currentProjectId,
     state.projectName,
   ]);
-
-  const addComponent = (component: ComponentData) => {
-    const { yComponents } = getOrInitDoc();
-    localChangeRef.current = true;
-    const newComponent = {
-      ...component,
-      id: component.id || Date.now().toString(),
-      position: component.position || { x: 150, y: 150 },
-    };
-    yComponents.push([newComponent]);
-  };
-
-  const updateComponent = (id: string, updates: Partial<ComponentData>) => {
-    const { yComponents } = getOrInitDoc();
-    const index = yComponents.toArray().findIndex((comp) => comp.id === id);
-    if (index === -1) return;
-    localChangeRef.current = true;
-    const existing = yComponents.get(index) as ComponentData;
-    const updated = {
-      ...existing,
-      ...updates,
-      props: updates.props
-        ? { ...existing.props, ...updates.props }
-        : existing.props,
-      style: updates.style
-        ? { ...existing.style, ...updates.style }
-        : existing.style,
-      position: updates.position
-        ? { ...existing.position, ...updates.position }
-        : existing.position,
-    };
-    yComponents.delete(index, 1);
-    yComponents.insert(index, [updated]);
-  };
-
-  const deleteComponent = (id: string) => {
-    const { yComponents } = getOrInitDoc();
-    const index = yComponents.toArray().findIndex((comp) => comp.id === id);
-    if (index === -1) return;
-    localChangeRef.current = true;
-    yComponents.delete(index, 1);
-    setState((prev) => ({
-      ...prev,
-      selectedComponent:
-        prev.selectedComponent === id ? null : prev.selectedComponent,
-    }));
-  };
-
-  const selectComponent = (component: ComponentData | null) => {
-    setState((prev) => ({
-      ...prev,
-      selectedComponent: component ? component.id : null,
-      showMobileProperties: component !== null && window.innerWidth < 768,
-    }));
-  };
-
-  const reorderComponent = (dragId: string, dropId: string) => {
-    const { yComponents } = getOrInitDoc();
-    const components = yComponents.toArray();
-    const dragIndex = components.findIndex((c) => c.id === dragId);
-    const dropIndex = components.findIndex((c) => c.id === dropId);
-
-    if (dragIndex === -1 || dropIndex === -1) return;
-
-    localChangeRef.current = true;
-    const [dragged] = components.splice(dragIndex, 1);
-    components.splice(dropIndex, 0, dragged);
-    yComponents.delete(0, yComponents.length);
-    yComponents.push(components);
-  };
-
-  const clearCanvas = () => {
-    replaceComponents([]);
-    setState((prev) => ({
-      ...prev,
-      selectedComponent: null,
-    }));
-  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   return {
     children,
