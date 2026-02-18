@@ -1311,6 +1311,7 @@ export function RenderableComponent({
                 >
                   <RenderableComponent
                     component={child}
+                    projectId={projectId}
                     isSelected={false}
                     onUpdate={(childUpdates) => {
                       const newChildren = component.children?.map(c =>
@@ -1797,6 +1798,7 @@ export function RenderableComponent({
                   >
                     <RenderableComponent
                       component={child}
+                      projectId={projectId}
                       isSelected={false}
                       onUpdate={(childUpdates) => {
                         const newChildren = [...(component.children || [])];
