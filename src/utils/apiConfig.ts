@@ -9,8 +9,8 @@ export const getApiBaseUrl = (): string => {
         return 'http://localhost:4000';
     }
 
-    // Explicitly handle production backend URL
-    if (hostname === 'buildxdesigner.site') {
+    // Explicitly handle production backend URL (including subdomains)
+    if (hostname === 'buildxdesigner.site' || hostname.endsWith('.buildxdesigner.site')) {
         return 'https://buildxdesigner.duckdns.org';
     }
 
