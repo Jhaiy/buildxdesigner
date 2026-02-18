@@ -36,6 +36,8 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Label } from "./ui/label";
+import { formatUrl } from '../utils/urlUtils';
+
 
 type ActionType = 'onClick' | 'onHover' | 'onFocus' | 'onBlur';
 type ActionHandlerType = 'custom' | 'navigate' | 'scroll' | 'copy' | 'toggle' | 'supabase';
@@ -148,7 +150,8 @@ const DraggableGridItem = ({ id, index, moveItem, children, isPreview }: Draggab
 
 interface RenderableComponentProps {
   component: ComponentData;
-  isSelected: boolean;
+  projectId?: string;
+  isSelected?: boolean;
   onUpdate: (updates: Partial<ComponentData>) => void;
   onDelete: () => void;
   disabled?: boolean;
@@ -163,6 +166,7 @@ interface RenderableComponentProps {
 
 export function RenderableComponent({
   component,
+  projectId,
   isSelected,
   onUpdate,
   onDelete,
@@ -546,9 +550,10 @@ export function RenderableComponent({
 
             // Handle navigation
             if (action.handlerType === 'navigate' && action.url) {
-              console.log('Executing navigate action to:', action.url);
+              const absoluteUrl = formatUrl(action.url);
+              console.log(`Executing navigate action to: ${action.url} -> ${absoluteUrl}`);
               // For navigation, we can use the parent window directly
-              window.open(action.url, action.target || '_blank');
+              window.open(absoluteUrl, action.target || '_blank');
               return true;
             }
 
@@ -689,15 +694,26 @@ export function RenderableComponent({
                   return true;
                 `);
                 return handlerFn(event, componentProps);
-              } catch (error) {
+              } catch (error: any) {
                 console.error('Error executing action handler:', error);
+                if (isPreview) {
+                  toast.error("Custom Script Error", {
+                    description: error.message
+                  });
+                }
                 return false;
               }
             }
 
             return false;
-          } catch (error) {
+          } catch (error: any) {
             console.error('Error executing action:', error);
+            // Show toast error in preview mode so user knows something failed
+            if (isPreview) {
+              toast.error("Action Execution Failed", {
+                description: error.message || "An error occurred while running the action."
+              });
+            }
             return false;
           }
         };
@@ -837,8 +853,9 @@ export function RenderableComponent({
                 // Handle navigation actions immediately
                 const navigateAction = onClickActions.find(a => a.handlerType === 'navigate');
                 if (navigateAction && navigateAction.url) {
-                  console.log('Executing navigation action:', navigateAction);
-                  window.open(navigateAction.url, navigateAction.target || '_blank');
+                  const absoluteUrl = formatUrl(navigateAction.url);
+                  console.log(`Executing navigation action: ${navigateAction.url} -> ${absoluteUrl}`);
+                  window.open(absoluteUrl, navigateAction.target || '_blank');
                   return;
                 }
 
@@ -957,6 +974,7 @@ export function RenderableComponent({
             disabled={isPreview}
           >
             <PayMongoButton
+              projectId={projectId}
               label={props.label || "Buy Now"}
               amount={props.amount || 100}
               description={props.description || "Product Purchase"}
@@ -1297,6 +1315,7 @@ export function RenderableComponent({
                 >
                   <RenderableComponent
                     component={child}
+                    projectId={projectId}
                     isSelected={false}
                     onUpdate={(childUpdates) => {
                       const newChildren = component.children?.map(c =>
@@ -1783,6 +1802,7 @@ export function RenderableComponent({
                   >
                     <RenderableComponent
                       component={child}
+                      projectId={projectId}
                       isSelected={false}
                       onUpdate={(childUpdates) => {
                         const newChildren = [...(component.children || [])];

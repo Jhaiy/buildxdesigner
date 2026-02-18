@@ -180,9 +180,10 @@ export function EditorTopBar({
     // Try to load if we have a token, regardless of the prop status (handles manual reconnects/local dev)
     const token = localStorage.getItem("supabase_integration_token");
     if (token) {
-      setIsLoadingSupabase(true);
-      const isLocal = window.location.hostname === "localhost";
-      const backendBase = isLocal ? "http://localhost:4000" : "";
+      setIsLoadingSupabase(true)
+      const hostname = window.location.hostname
+      const isLocal = hostname === "localhost" || hostname === "127.0.0.1"
+      const backendBase = isLocal ? "http://localhost:4000" : (hostname === 'buildxdesigner.site' ? "https://buildxdesigner.duckdns.org" : "")
 
       Promise.all([
         fetch(`${backendBase}/api/supabase/organizations`, {
@@ -231,9 +232,10 @@ export function EditorTopBar({
     const token = localStorage.getItem("supabase_integration_token");
     if (!token) return;
 
-    setIsLoadingSupabase(true);
-    const isLocal = window.location.hostname === "localhost";
-    const backendBase = isLocal ? "http://localhost:4000" : "";
+    setIsLoadingSupabase(true)
+    const hostname = window.location.hostname
+    const isLocal = hostname === "localhost" || hostname === "127.0.0.1"
+    const backendBase = isLocal ? "http://localhost:4000" : (hostname === 'buildxdesigner.site' ? "https://buildxdesigner.duckdns.org" : "")
 
     Promise.all([
       fetch(`${backendBase}/api/supabase/organizations`, {
@@ -707,33 +709,20 @@ export function EditorTopBar({
                         if (!newProjectId || newProjectId === "none") return;
 
                         try {
-                          setIsLoadingSupabase(true);
-                          const token = localStorage.getItem(
-                            "supabase_integration_token",
-                          );
-                          const isLocal =
-                            window.location.hostname === "localhost";
-                          const backendBase = isLocal
-                            ? "http://localhost:4000"
-                            : "";
+                          setIsLoadingSupabase(true)
+                          const token = localStorage.getItem("supabase_integration_token")
+                          const hostname = window.location.hostname
+                          const isLocal = hostname === "localhost" || hostname === "127.0.0.1"
+                          const backendBase = isLocal ? "http://localhost:4000" : (hostname === 'buildxdesigner.site' ? "https://buildxdesigner.duckdns.org" : "")
 
-                          const res = await fetch(
-                            `${backendBase}/api/supabase/projects/${newProjectId}/api-keys`,
-                            {
-                              headers: { Authorization: `Bearer ${token}` },
-                            },
-                          );
+                          const res = await fetch(`${backendBase}/api/supabase/projects/${newProjectId}/api-keys`, {
+                            headers: { Authorization: `Bearer ${token}` }
+                          })
 
-                          if (!res.ok)
-                            throw new Error(
-                              "Failed to fetch project keys: " + res.status,
-                            );
-                          const keysData = await res.json();
+                          if (!res.ok) throw new Error("Failed to fetch project keys: " + res.status)
+                          const keysData = await res.json()
 
-                          const anonKeyObj = keysData.find(
-                            (k: any) =>
-                              k.name === "anon" || k.tags?.includes("anon"),
-                          );
+                          const anonKeyObj = keysData.find((k: any) => k.name === 'anon' || k.tags?.includes('anon'))
 
                           if (anonKeyObj) {
                             const newUrl = `https://${newProjectId}.supabase.co`;
