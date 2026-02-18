@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Canvas } from "./Canvas";
+
 import { fetchProjectBySubdomain } from "../supabase/data/projectService";
 import { Loader2 } from "lucide-react";
 
-import { DndProvider } from "react-dnd";
-import { HTML5Backend } from "react-dnd-html5-backend";
+import { SiteRenderer } from "./SiteRenderer";
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
+
 
 export function PublishedSite() {
     const [project, setProject] = useState<any>(null);
@@ -74,27 +76,11 @@ export function PublishedSite() {
 
     return (
         <DndProvider backend={HTML5Backend}>
-            <div className="w-full h-screen overflow-hidden bg-background">
-                <div className="pointer-events-auto h-full overflow-auto">
-
-                    <Canvas
-                        projectId={project.id}
-                        projectName={project.name || "Published Site"}
-                        readOnly={true}
-                        // These handlers are disabled in readOnly mode, but required by types
-                        onSelectComponent={() => { }}
-                        onUpdateComponent={() => { }}
-                        onDeleteComponent={() => { }}
-                        onReorderComponent={() => { }}
-                        onZoomChange={() => { }}
-                        components={project.project_layout || []}
-                        selectedComponent={null}
-                        canvasZoom={100}
-                        backgroundColor={project.backgroundColor || "#ffffff"}
-                        showGrid={false}
-                    />
-                </div>
-            </div>
+            <SiteRenderer
+                components={project.project_layout || []}
+                backgroundColor={project.backgroundColor || "#ffffff"}
+            />
         </DndProvider>
     );
+
 }
