@@ -10,7 +10,6 @@ import {
 } from "y-protocols/awareness.js";
 import * as Y from "yjs";
 import { getSupabaseSession } from "../supabase/auth/authService";
-import { supabase, SupabaseSession } from "../supabase/config/supabaseClient";
 import {
   saveProject,
   fetchProjectById,
@@ -24,23 +23,17 @@ const CollaborationContext = createContext<CollaborationContextType | null>(
 );
 
 type UseCollaborationProps = {
-  projectId: string;
   children?: React.ReactNode;
   setState: React.Dispatch<React.SetStateAction<EditorState>>;
   state: EditorState;
-  currentProjectId: string | null;
 };
 
 function useCollaborationLogic({
-  projectId,
   setState,
   children,
-  currentProjectId,
   state,
 }: UseCollaborationProps) {
   const currentUser = state.currentUser;
-  const [isConnected, setIsConnected] = useState(false);
-  const [session, setSession] = useState<SupabaseSession | null>(null);
 
   const ydocRef = useRef<Y.Doc | null>(null);
   const yComponentsRef = useRef<Y.Array<ComponentData> | null>(null);
@@ -442,16 +435,12 @@ function useCollaborationLogic({
 
 export function CollaborationServiceProvider({
   children,
-  projectId,
   setState,
   state,
-  currentProjectId,
 }: UseCollaborationProps & { children: React.ReactNode }) {
   const Collaboration = useCollaborationLogic({
-    projectId,
     setState,
     state,
-    currentProjectId,
   });
   return (
     <CollaborationContext.Provider value={Collaboration}>

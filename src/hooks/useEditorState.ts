@@ -107,6 +107,11 @@ export function useEditorState() {
     userProjectConfig: getInitialUserProjectConfig(),
     projectIsPublic: null,
     projectAuthorId: null,
+  });
+
+  const collaboration = useCollaboration({
+    setState,
+    state,
     projectSubdomain: undefined,
     projectIsPublished: undefined,
     projectLastPublishedAt: undefined,
