@@ -416,6 +416,32 @@ export async function publishProject(
   }
 }
 
+export async function unpublishProject(
+  projectId: string,
+): Promise<{ error: any }> {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { error: "Not authenticated" };
+    }
+
+    const { error: updateError } = await supabase
+      .from("projects")
+      .update({
+        is_published: false,
+      })
+      .eq("projects_id", projectId)
+      .eq("user_id", user.id);
+
+    return { error: updateError };
+  } catch (err) {
+    return { error: err };
+  }
+}
+
 export async function fetchProjectBySubdomain(
   subdomain: string,
 ): Promise<{ data: Project | null; error: any }> {

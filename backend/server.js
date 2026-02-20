@@ -16,7 +16,18 @@ const allowedOrigins = [
 
 const corsOptions = {
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin) {
+            // Allow server-to-server / non-browser requests
+            callback(null, true);
+            return;
+        }
+        // Allow exact matches from the allowedOrigins list
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+        // Allow ALL *.buildxdesigner.site subdomains (published sites)
+        if (/^https?:\/\/[^.]+\.buildxdesigner\.site$/.test(origin)) {
             callback(null, true);
             return;
         }

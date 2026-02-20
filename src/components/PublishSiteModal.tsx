@@ -1,5 +1,3 @@
-"use client"
-
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
@@ -7,7 +5,7 @@ import { Button } from "./ui/button"
 import { X, Globe, Check, Loader2, AlertCircle, RefreshCw, ExternalLink, Calendar, CheckCircle2 } from "lucide-react"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
-import { publishProject, checkSubdomainAvailability } from "../supabase/data/projectService"
+import { publishProject, checkSubdomainAvailability, unpublishProject } from "../supabase/data/projectService"
 import { toast } from "sonner"
 import { Project } from "../supabase/types/project"
 
@@ -27,6 +25,11 @@ export function PublishSiteModal({ isOpen, onClose, project, onPublishSuccess }:
     const [publishedUrl, setPublishedUrl] = useState<string | null>(null)
     const [availability, setAvailability] = useState<AvailabilityState>("idle")
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // Takedown state
+    const [showTakedownConfirm, setShowTakedownConfirm] = useState(false)
+    const [takedownInput, setTakedownInput] = useState("")
+    const [isTakingDown, setIsTakingDown] = useState(false)
 
     const isAlreadyPublished = !!project?.isPublished
     const currentSubdomain = project?.subdomain ?? ""
@@ -59,6 +62,9 @@ export function PublishSiteModal({ isOpen, onClose, project, onPublishSuccess }:
             }
             setError(null)
             setAvailability("idle")
+            setShowTakedownConfirm(false)
+            setTakedownInput("")
+            setIsTakingDown(false)
         }
         wasOpenRef.current = isOpen
     }, [isOpen, project])
@@ -137,11 +143,37 @@ export function PublishSiteModal({ isOpen, onClose, project, onPublishSuccess }:
         }
     }
 
+    const handleTakedown = async () => {
+        if (takedownInput !== currentSubdomain) return
+
+        setIsTakingDown(true)
+        setError(null)
+
+        try {
+            const result = await unpublishProject(project!.id)
+            if (result.error) {
+                throw new Error(typeof result.error === "string" ? result.error : result.error.message || "Failed to takedown site")
+            }
+
+            toast.success("Site taken down successfully", {
+                description: "Your site is no longer publicly accessible.",
+            })
+            // Passing empty string signals it's no longer published
+            onPublishSuccess("")
+            onClose()
+        } catch (err: any) {
+            setError(err.message || "An unexpected error occurred")
+        } finally {
+            setIsTakingDown(false)
+        }
+    }
+
     if (!isOpen || !project) return null
 
     const isFormUnchanged = subdomain === currentSubdomain
     const canPublish =
         !isPublishing &&
+        !isTakingDown &&
         !!subdomain &&
         !validateSubdomain(subdomain) &&
         availability !== "taken" &&
@@ -215,7 +247,7 @@ export function PublishSiteModal({ isOpen, onClose, project, onPublishSuccess }:
                                             : ""
                                         }`}
                                     placeholder="my-awesome-site"
-                                    disabled={isPublishing}
+                                    disabled={isPublishing || isTakingDown}
                                 />
                                 {/* Availability indicator */}
                                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -254,7 +286,7 @@ export function PublishSiteModal({ isOpen, onClose, project, onPublishSuccess }:
                                 <span>Could not check availability. You can still try to publish.</span>
                             </div>
                         )}
-                        {error && (
+                        {error && !showTakedownConfirm && (
                             <div className="flex items-center gap-2 text-sm text-red-500">
                                 <AlertCircle className="w-4 h-4" />
                                 <span>{error}</span>
@@ -264,8 +296,8 @@ export function PublishSiteModal({ isOpen, onClose, project, onPublishSuccess }:
                 </div>
 
                 {/* Actions */}
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-1">
-                    <Button variant="outline" onClick={onClose} disabled={isPublishing}>
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-4">
+                    <Button variant="outline" onClick={onClose} disabled={isPublishing || isTakingDown}>
                         Cancel
                     </Button>
                     <Button
@@ -288,6 +320,78 @@ export function PublishSiteModal({ isOpen, onClose, project, onPublishSuccess }:
                         )}
                     </Button>
                 </div>
+
+                {/* Takedown Section (Only if published) */}
+                {isAlreadyPublished && (
+                    <div className="mt-6 pt-6 border-t border-border">
+                        {!showTakedownConfirm ? (
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="text-sm">
+                                    <h4 className="font-medium text-foreground">Danger Zone</h4>
+                                    <p className="text-muted-foreground">Make your site private again.</p>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 dark:border-red-900/50 dark:hover:bg-red-900/20 w-full sm:w-auto"
+                                    onClick={() => setShowTakedownConfirm(true)}
+                                    disabled={isPublishing || isTakingDown}
+                                >
+                                    Takedown Website
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/50 rounded-lg space-y-4">
+                                <div className="space-y-2">
+                                    <h4 className="font-semibold text-red-700 dark:text-red-400">Are you absolutely sure?</h4>
+                                    <p className="text-sm text-red-600 dark:text-red-300">
+                                        This will immediately make your site inaccessible. To confirm, please type your subdomain: <strong>{currentSubdomain}</strong>
+                                    </p>
+                                </div>
+                                <Input
+                                    value={takedownInput}
+                                    onChange={(e) => setTakedownInput(e.target.value)}
+                                    placeholder={currentSubdomain}
+                                    className="border-red-200 focus-visible:ring-red-500"
+                                    disabled={isTakingDown}
+                                />
+                                {error && showTakedownConfirm && (
+                                    <div className="flex items-center gap-2 text-sm text-red-500">
+                                        <AlertCircle className="w-4 h-4" />
+                                        <span>{error}</span>
+                                    </div>
+                                )}
+                                <div className="flex gap-2 justify-end">
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                            setShowTakedownConfirm(false);
+                                            setTakedownInput("");
+                                        }}
+                                        disabled={isTakingDown}
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={handleTakedown}
+                                        disabled={takedownInput !== currentSubdomain || isTakingDown}
+                                    >
+                                        {isTakingDown ? (
+                                            <>
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Taking down...
+                                            </>
+                                        ) : (
+                                            "Confirm Takedown"
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </>
     )
