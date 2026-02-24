@@ -32,10 +32,19 @@ export function ResizeHandle({
   const startPos = useRef({ x: 0, y: 0 });
   const startDimensions = useRef({ width: 0, height: 0 });
 
+  // Refs to track state in event listeners (avoiding stale closures)
+  const currentDimensions = useRef(dimensions);
+  const activeResizeDirection = useRef<'width' | 'height' | 'both' | null>(null);
+
   // Update dimensions when initialWidth or initialHeight changes
   React.useEffect(() => {
-    setDimensions({ width: initialWidth, height: initialHeight });
-  }, [initialWidth, initialHeight]);
+    // Prevent the parent state from fighting the local state while dragging
+    if (!isResizing) {
+      const newDims = { width: initialWidth, height: initialHeight };
+      setDimensions(newDims);
+      currentDimensions.current = newDims;
+    }
+  }, [initialWidth, initialHeight, isResizing]);
 
   const handleMouseDown = (e: React.MouseEvent, direction: 'width' | 'height' | 'both') => {
     if (disabled) return;
@@ -44,8 +53,11 @@ export function ResizeHandle({
 
     setIsResizing(true);
     setResizeDirection(direction);
+    activeResizeDirection.current = direction;
+
     startPos.current = { x: e.clientX, y: e.clientY };
     startDimensions.current = { ...dimensions };
+    currentDimensions.current = { ...dimensions };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
@@ -55,7 +67,7 @@ export function ResizeHandle({
   };
 
   const handleMouseMove = (e: MouseEvent) => {
-    if (!isResizing || !resizeDirection) return;
+    if (!activeResizeDirection.current) return;
 
     const deltaX = e.clientX - startPos.current.x;
     const deltaY = e.clientY - startPos.current.y;
@@ -63,22 +75,27 @@ export function ResizeHandle({
     let newWidth = startDimensions.current.width;
     let newHeight = startDimensions.current.height;
 
-    if (resizeDirection === 'width' || resizeDirection === 'both') {
+    if (activeResizeDirection.current === 'width' || activeResizeDirection.current === 'both') {
       newWidth = Math.max(minWidth, startDimensions.current.width + deltaX);
     }
 
-    if (resizeDirection === 'height' || resizeDirection === 'both') {
+    if (activeResizeDirection.current === 'height' || activeResizeDirection.current === 'both') {
       newHeight = Math.max(minHeight, startDimensions.current.height + deltaY);
     }
 
-    setDimensions({ width: newWidth, height: newHeight });
+    const newDims = { width: newWidth, height: newHeight };
+    setDimensions(newDims);
+    currentDimensions.current = newDims;
+    onResize(newWidth, newHeight); // <-- ADDED THIS FOR LIVE UPDATES
   };
 
   const handleMouseUp = () => {
-    if (isResizing) {
+    if (activeResizeDirection.current) {
       setIsResizing(false);
       setResizeDirection(null);
-      onResize(dimensions.width, dimensions.height);
+      activeResizeDirection.current = null;
+
+      onResize(currentDimensions.current.width, currentDimensions.current.height);
 
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -89,21 +106,27 @@ export function ResizeHandle({
 
   const handleTouchStart = (e: React.TouchEvent, direction: 'width' | 'height' | 'both') => {
     if (disabled) return;
-    e.preventDefault();
+    
+    // REMOVED e.preventDefault() here! CSS touch-none handles this now.
     e.stopPropagation();
 
     const touch = e.touches[0];
     setIsResizing(true);
     setResizeDirection(direction);
+    activeResizeDirection.current = direction;
+
     startPos.current = { x: touch.clientX, y: touch.clientY };
     startDimensions.current = { ...dimensions };
+    currentDimensions.current = { ...dimensions };
 
-    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
     document.addEventListener('touchend', handleTouchEnd);
   };
 
   const handleTouchMove = (e: TouchEvent) => {
-    if (!isResizing || !resizeDirection) return;
+    if (!activeResizeDirection.current) return;
+
+    e.preventDefault(); 
 
     const touch = e.touches[0];
     const deltaX = touch.clientX - startPos.current.x;
@@ -112,22 +135,27 @@ export function ResizeHandle({
     let newWidth = startDimensions.current.width;
     let newHeight = startDimensions.current.height;
 
-    if (resizeDirection === 'width' || resizeDirection === 'both') {
+    if (activeResizeDirection.current === 'width' || activeResizeDirection.current === 'both') {
       newWidth = Math.max(minWidth, startDimensions.current.width + deltaX);
     }
 
-    if (resizeDirection === 'height' || resizeDirection === 'both') {
+    if (activeResizeDirection.current === 'height' || activeResizeDirection.current === 'both') {
       newHeight = Math.max(minHeight, startDimensions.current.height + deltaY);
     }
 
-    setDimensions({ width: newWidth, height: newHeight });
+    const newDims = { width: newWidth, height: newHeight };
+    setDimensions(newDims);
+    currentDimensions.current = newDims;
+    onResize(newWidth, newHeight); // <-- ADDED THIS FOR LIVE UPDATES
   };
 
   const handleTouchEnd = () => {
-    if (isResizing) {
+    if (activeResizeDirection.current) {
       setIsResizing(false);
       setResizeDirection(null);
-      onResize(dimensions.width, dimensions.height);
+      activeResizeDirection.current = null;
+
+      onResize(currentDimensions.current.width, currentDimensions.current.height);
 
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
@@ -152,7 +180,7 @@ export function ResizeHandle({
         <div className="absolute inset-0 pointer-events-none group-hover:pointer-events-auto transition-opacity">
           {/* Right handle (width) */}
           <div
-            className="absolute top-0 -right-1.5 w-3 h-full cursor-ew-resize bg-primary/0 hover:bg-primary/30 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center border-r-2 border-transparent hover:border-primary"
+            className="absolute top-0 -right-1.5 w-3 h-full cursor-ew-resize bg-primary/0 hover:bg-primary/30 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center border-r-2 border-transparent hover:border-primary touch-none"
             onMouseDown={(e) => handleMouseDown(e, 'width')}
             onTouchStart={(e) => handleTouchStart(e, 'width')}
             style={{ pointerEvents: 'auto' }}
@@ -162,7 +190,7 @@ export function ResizeHandle({
 
           {/* Bottom handle (height) */}
           <div
-            className="absolute -bottom-1.5 left-0 w-full h-3 cursor-ns-resize bg-primary/0 hover:bg-primary/30 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center border-b-2 border-transparent hover:border-primary"
+            className="absolute -bottom-1.5 left-0 w-full h-3 cursor-ns-resize bg-primary/0 hover:bg-primary/30 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center border-b-2 border-transparent hover:border-primary touch-none"
             onMouseDown={(e) => handleMouseDown(e, 'height')}
             onTouchStart={(e) => handleTouchStart(e, 'height')}
             style={{ pointerEvents: 'auto' }}
@@ -172,7 +200,7 @@ export function ResizeHandle({
 
           {/* Corner handle (both) - most prominent */}
           <div
-            className="absolute -bottom-2 -right-2 w-5 h-5 cursor-nwse-resize bg-primary hover:bg-primary/80 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-sm shadow-lg border-2 border-white dark:border-gray-800"
+            className="absolute -bottom-2 -right-2 w-5 h-5 cursor-nwse-resize bg-primary hover:bg-primary/80 transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-sm shadow-lg border-2 border-white dark:border-gray-800 touch-none"
             onMouseDown={(e) => handleMouseDown(e, 'both')}
             onTouchStart={(e) => handleTouchStart(e, 'both')}
             style={{ pointerEvents: 'auto' }}

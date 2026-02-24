@@ -251,20 +251,31 @@ export function CreateNewWebsiteModal({
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
   const [showNameInput, setShowNameInput] = useState(false)
 
-  useEffect(() => {
-    if (isOpen && initialTemplateId) {
-      const allTemplates = [...templates, ...recommendedTemplates]
-      const template = allTemplates.find((t) => t.id === initialTemplateId)
-      if (template) {
-        setSelectedTemplate(template)
-        setProjectName(`My ${template.name}`)
-        setShowNameInput(true)
+  // 1. We sync state DURING the render phase instead of waiting for a useEffect. 
+  // This calculates the correct view BEFORE the browser paints, completely eliminating the flash on open.
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen)
+  
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen)
+    if (isOpen) {
+      if (initialTemplateId) {
+        const allTemplates = [...templates, ...recommendedTemplates]
+        const template = allTemplates.find((t) => t.id === initialTemplateId)
+        if (template) {
+          setSelectedTemplate(template)
+          setProjectName(`My ${template.name}`)
+          setShowNameInput(true)
+        }
+      } else {
+        // Reset to default browse state when opening without a specific template
+        setShowNameInput(false)
+        setSelectedTemplate(null)
+        setProjectName("")
+        setSearchQuery("")
+        setSelectedCategory("All")
       }
-    } else if (isOpen && !initialTemplateId) {
-      setShowNameInput(false)
-      setSelectedTemplate(null)
     }
-  }, [isOpen, initialTemplateId, recommendedTemplates])
+  }
 
   const handleSearch = (query: string) => {
     setSearchQuery(query)
@@ -299,11 +310,6 @@ export function CreateNewWebsiteModal({
   }
 
   const handleClose = () => {
-    setSearchQuery("")
-    setSelectedCategory("All")
-    setProjectName("")
-    setSelectedTemplate(null)
-    setShowNameInput(false)
     onClose()
   }
 
@@ -521,7 +527,7 @@ export function CreateNewWebsiteModal({
                 <Button
                   onClick={handleCreateProject}
                   disabled={!projectName.trim()}
-                  className="flex-1 bg-linear-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700"
+                  className="flex-1 bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white"
                 >
                   Create Project
                 </Button>

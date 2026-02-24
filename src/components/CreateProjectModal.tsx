@@ -76,7 +76,7 @@ export function CreateProjectModal({
             onKeyDown={handleKeyDown}
           >
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-500 to-violet-500 px-6 py-4 text-white">
+            <div className="bg-linear-to-r from-blue-500 to-violet-500 px-6 py-4 text-white">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
@@ -144,7 +144,7 @@ export function CreateProjectModal({
                 <Button
                   type="submit"
                   disabled={isLoading || !projectName.trim()}
-                  className="flex-1 bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-linear-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoading ? (
                     <>
