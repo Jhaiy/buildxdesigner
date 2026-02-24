@@ -175,7 +175,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
 
             {/* Left Sidebar */}
             <div
-              className={`flex-shrink-0 bg-card border-r border-border overflow-hidden relative transition-all duration-300 ease-in-out ${state.isLeftSidebarVisible ? "" : "w-0 border-r-0"
+              className={`shrink-0 bg-card border-r border-border overflow-hidden relative transition-all duration-300 ease-in-out ${state.isLeftSidebarVisible ? "" : "w-0 border-r-0"
                 }`}
               style={{
                 width: state.isLeftSidebarVisible
@@ -207,7 +207,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
             {/* Left Splitter */}
             {state.isLeftSidebarVisible && (
               <div
-                className="relative flex-shrink-0 group"
+                className="relative shrink-0 group"
                 onMouseDown={handleLeftSplitterMouseDown}
                 style={{ width: "8px" }}
               >
@@ -293,7 +293,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                 </div>
               )}
 
-              <div className="flex-1 flex overflow-hidden justify-center items-start p-6 overflow-auto custom-scrollbar bg-muted/10">
+              <div className="flex-1 flex overflow-hidden justify-center items-start p-6 custom-scrollbar bg-muted/10">
                 <div
                   className="bg-card shadow-2xl transition-all duration-300 ease-in-out h-full overflow-hidden border border-border rounded-lg relative"
                   style={{
@@ -350,7 +350,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
             {/* Right Splitter */}
             {state.isRightSidebarVisible && (
               <div
-                className="relative flex-shrink-0 group"
+                className="relative shrink-0 group"
                 onMouseDown={handleRightSplitterMouseDown}
                 style={{ width: "8px" }}
               >
@@ -375,7 +375,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
 
             {/* Right Sidebar */}
             <div
-              className={`flex-shrink-0 bg-card border-l border-border overflow-hidden flex flex-col transition-all duration-300 ease-in-out ${state.isRightSidebarVisible ? "" : "w-0 border-l-0"
+              className={`shrink-0 bg-card border-l border-border overflow-hidden flex flex-col transition-all duration-300 ease-in-out ${state.isRightSidebarVisible ? "" : "w-0 border-l-0"
                 }`}
               style={{
                 width: state.isRightSidebarVisible
@@ -398,7 +398,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   {/* Tab Navigation */}
-                  <div className="border-b p-3 flex-shrink-0 pt-10">
+                  <div className="border-b p-3 shrink-0 pt-10">
                     <div className="grid grid-cols-2 gap-1 bg-muted/30 p-1 rounded-lg">
                       <button
                         onClick={() =>

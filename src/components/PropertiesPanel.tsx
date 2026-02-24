@@ -1107,7 +1107,7 @@ export function PropertiesPanel({
                             value={action.handler}
                             onChange={(e) => updateAction(action.id, { handler: e.target.value })}
                             placeholder="Enter JavaScript code..."
-                            className="min-h-[80px] text-xs font-mono w-full"
+                            className="min-h-20 text-xs font-mono w-full"
                           />
                           <p className="text-xs text-muted-foreground mt-1">Enter JavaScript code to run on {action.type}</p>
                         </div>
@@ -2030,7 +2030,7 @@ export function PropertiesPanel({
   return (
     <div id="properties-panel" className="w-72 border-l bg-background flex flex-col h-full">
       {/* Component Header */}
-      <div className="p-3 border-b flex-shrink-0 bg-background hidden">
+      <div className="p-3 border-b shrink-0 bg-background hidden">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Selected</span>
@@ -2073,7 +2073,7 @@ export function PropertiesPanel({
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full overflow-hidden">
-        <TabsList className="grid w-full grid-cols-2 h-8 m-0 rounded-none border-b bg-background flex-shrink-0">
+        <TabsList className="grid w-full grid-cols-2 h-8 m-0 rounded-none border-b bg-background shrink-0">
           <TabsTrigger
             value="content"
             className="text-xs h-7 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary"

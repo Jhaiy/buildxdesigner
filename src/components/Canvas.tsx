@@ -1035,7 +1035,7 @@ export function Canvas({
                 />
               </svg>
             </button>
-            <span className="text-xs font-medium text-muted-foreground min-w-[3rem] text-center">
+            <span className="text-xs font-medium text-muted-foreground min-w-12 text-center">
               {canvasZoom}%
             </span>
             <button

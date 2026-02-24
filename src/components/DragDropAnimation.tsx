@@ -92,7 +92,7 @@ export const DragDropAnimation: React.FC = () => {
   }, []);
 
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-950 rounded-2xl overflow-hidden shadow-2xl border border-violet-500/20 relative">
+    <div className="w-full h-full bg-linear-to-br from-slate-950 via-indigo-950 to-violet-950 rounded-2xl overflow-hidden shadow-2xl border border-violet-500/20 relative">
       {/* Animated background */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute inset-0" style={{
@@ -398,7 +398,7 @@ export const DragDropAnimation: React.FC = () => {
               {/* AI Suggestions */}
               <div className="bg-violet-500/10 border border-violet-500/30 rounded-lg p-3">
                 <div className="flex items-center space-x-2 mb-2">
-                  <div className="w-6 h-6 bg-gradient-to-br from-violet-500 to-blue-500 rounded-full flex items-center justify-center">
+                  <div className="w-6 h-6 bg-linear-to-br from-violet-500 to-blue-500 rounded-full flex items-center justify-center">
                     <Wand2 className="w-3 h-3 text-white" />
                   </div>
                   <span className="text-xs text-violet-200">AI Design Assistant</span>
