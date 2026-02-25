@@ -119,7 +119,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
   return (
     <DndProvider backend={HTML5Backend}>
       <TooltipProvider>
-        <div className="h-screen bg-background flex flex-col overflow-hidden">
+       <div className="editor-gradient-surface h-screen flex flex-col overflow-hidden">
           {/* Editor Top Bar */}
           <EditorTopBar
             currentUser={state.currentUser}

@@ -180,7 +180,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
   }
 
   return (
-    <div className="min-h-screen landing-theme-bg landing-dark-theme">
+    <div className="min-h-screen dashboard-gradient-surface landing-dark-theme">
       <Toaster position="top-center" />
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-blue-100">
