@@ -163,6 +163,7 @@ interface RenderableComponentProps {
     supabaseKey: string;
   };
   navigate?: (path: string) => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 export function RenderableComponent({
@@ -176,7 +177,8 @@ export function RenderableComponent({
   editingComponentId,
   onEditComponent,
   userProjectConfig,
-  navigate
+  navigate,
+  onContextMenu,
 }: RenderableComponentProps) {
   const { type, props, style } = component;
   const combinedStyle = { ...style } as React.CSSProperties;
@@ -1273,21 +1275,18 @@ const onResizeEnd = () => {
           }
         };
 
-        return (
-          <ResizeHandle
-            onResize={(width, height) => {
-              onUpdate({
-                props: { ...props, width, height },
-                style: { ...style, width: `${width}px`, height: `${height}px` }
-              });
-            }}
-            initialWidth={imgWidth}
-            initialHeight={imgHeight}
-            className="group"
-            disabled={isPreview}
-            onResizeStart={onResizeStart}
-            onResizeEnd={onResizeEnd}
-          >
+  return (
+    <ResizeHandle
+      onResize={handleResize}  // ← use the shared handleResize, same as every other component
+      initialX={component.position?.x || 0}
+      initialY={component.position?.y || 0}
+      initialWidth={imgWidth}
+      initialHeight={imgHeight}
+      className="group"
+      disabled={isPreview}
+      onResizeStart={onResizeStart}
+      onResizeEnd={onResizeEnd}
+    >
 
             {props.src ? (
               <div
@@ -2349,7 +2348,7 @@ const onResizeEnd = () => {
   const hasEditableText = ['text', 'heading', 'button', 'navbar', 'hero', 'footer', 'form', 'container', 'grid', 'carousel'].includes(component.type);
 
   return (
-    <div className="relative group">
+    <div className="relative group" onContextMenu={onContextMenu}>
       {renderComponent()}
 
       {isSelected && (
@@ -2359,8 +2358,10 @@ const onResizeEnd = () => {
             <Button
               size="sm"
               variant="destructive"
+              onPointerDown={(e: React.PointerEvent<HTMLButtonElement>) => e.stopPropagation()}
               onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                 e.stopPropagation();
+                e.preventDefault();
                 onDelete();
               }}
               className="w-6 h-6 p-0"

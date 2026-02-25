@@ -13,6 +13,7 @@ import { setLocalProjectCache } from "../supabase/data/projectService";
 import { MinimalComponentPanel } from "./MinimalComponentPanel";
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import { Plus, Loader2 } from "lucide-react";
+import { createPortal } from 'react-dom';
 
 // Constants
 
@@ -1390,7 +1391,7 @@ export function Canvas({
 
               {filteredComponents.length === 0 ? (
 
-                <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
+                <div className="absolute inset-0 pointer-events-none z-10">
 
                    <div className="text-center animate-in fade-in zoom-in duration-500">
 
@@ -1566,6 +1567,8 @@ export function Canvas({
 
                           isPreview={readOnly}
 
+                          onContextMenu={!readOnly ? (e) => handleComponentContextMenu(e, component) : undefined} 
+
                         />
 
                       </div>
@@ -1618,35 +1621,22 @@ export function Canvas({
 
       {/* Canvas Context Menu - Hide in Read Only */}
 
-      {!readOnly && (
-
-        <CanvasContextMenu
-
-          position={contextMenu}
-
-          onClose={() => setContextMenu(null)}
-
-          onDuplicate={handleDuplicate}
-
-          onDelete={handleDelete}
-
-          onGroup={groupSelectedComponents}
-
-          onUngroup={ungroupSelected}
-
-          onBringToFront={bringToFront}
-
-          onSendToBack={sendToBack}
-
-          onCopy={() => copyToClipboard()}
-
-          canGroup={selectedComponents.size > 1}
-
-          canUngroup={selectedComponent?.type === "group"}
-
-        />
-
-      )}
+{!readOnly && createPortal(
+  <CanvasContextMenu
+    position={contextMenu}
+    onClose={() => setContextMenu(null)}
+    onDuplicate={handleDuplicate}
+    onDelete={handleDelete}
+    onGroup={groupSelectedComponents}
+    onUngroup={ungroupSelected}
+    onBringToFront={bringToFront}
+    onSendToBack={sendToBack}
+    onCopy={() => copyToClipboard()}
+    canGroup={selectedComponents.size > 1}
+    canUngroup={selectedComponent?.type === "group"}
+  />,
+  document.body
+)}
 
     </div>
 
