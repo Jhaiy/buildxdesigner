@@ -14,6 +14,7 @@ interface ResizeHandleProps {
   disabled?: boolean;
   onResizeStart?: () => void;
   onResizeEnd?: () => void;
+  gridSize?: number;
 }
 
 export function ResizeHandle({
@@ -28,7 +29,8 @@ export function ResizeHandle({
   children,
   disabled = false,
   onResizeStart,
-  onResizeEnd
+  onResizeEnd,
+  gridSize = 20
 }: ResizeHandleProps) {
   const [dimensions, setDimensions] = useState({
     x: initialX,
@@ -136,7 +138,23 @@ export function ResizeHandle({
       activeResizeDirection.current = null;
       onResizeEnd?.();
 
-      onResize(currentDimensions.current.x, currentDimensions.current.y, currentDimensions.current.width, currentDimensions.current.height);
+      // Magnetic Snap Logic: Snap edges to the nearest grid line on release
+      const snap = (val: number) => Math.round(val / gridSize) * gridSize;
+      
+      const dims = currentDimensions.current;
+      const snappedLeft = snap(dims.x);
+      const snappedTop = snap(dims.y);
+      const snappedRight = snap(dims.x + dims.width);
+      const snappedBottom = snap(dims.y + dims.height);
+      
+      const finalWidth = Math.max(minWidth, snappedRight - snappedLeft);
+      const finalHeight = Math.max(minHeight, snappedBottom - snappedTop);
+      
+      const finalDims = { x: snappedLeft, y: snappedTop, width: finalWidth, height: finalHeight };
+      
+      setDimensions(finalDims);
+      currentDimensions.current = finalDims;
+      onResize(finalDims.x, finalDims.y, finalDims.width, finalDims.height);
 
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -217,8 +235,25 @@ export function ResizeHandle({
       setIsResizing(false);
       setResizeDirection(null);
       activeResizeDirection.current = null;
+      onResizeEnd?.();
 
-      onResize(currentDimensions.current.x, currentDimensions.current.y, currentDimensions.current.width, currentDimensions.current.height);
+      // Magnetic Snap Logic: Snap edges to the nearest grid line on release
+      const snap = (val: number) => Math.round(val / gridSize) * gridSize;
+      
+      const dims = currentDimensions.current;
+      const snappedLeft = snap(dims.x);
+      const snappedTop = snap(dims.y);
+      const snappedRight = snap(dims.x + dims.width);
+      const snappedBottom = snap(dims.y + dims.height);
+      
+      const finalWidth = Math.max(minWidth, snappedRight - snappedLeft);
+      const finalHeight = Math.max(minHeight, snappedBottom - snappedTop);
+      
+      const finalDims = { x: snappedLeft, y: snappedTop, width: finalWidth, height: finalHeight };
+      
+      setDimensions(finalDims);
+      currentDimensions.current = finalDims;
+      onResize(finalDims.x, finalDims.y, finalDims.width, finalDims.height);
 
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);

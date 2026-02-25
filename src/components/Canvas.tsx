@@ -420,19 +420,35 @@ export function Canvas({
 
   // Bring to Front
   const bringToFront = useCallback(() => {
-    if (!selectedComponent || !onReorderComponent) return;
+    if (!selectedComponent) return;
+
+    const pageComponents = components.filter(
+      (c) => c.page_id === activePageId || c.page_id === "all" || (!c.page_id && activePageId === "home")
+    );
+    
+    const zIndices = pageComponents.map(c => parseInt(String(c.style?.zIndex || "0")));
+    const maxZ = zIndices.length > 0 ? Math.max(...zIndices) : 0;
+    const nextZ = maxZ + 1;
+
+    const previousZIndex = selectedComponent.style?.zIndex;
+    const componentId = selectedComponent.id;
+    const currentStyle = { ...selectedComponent.style };
 
     const execute = () => {
-      onReorderComponent(selectedComponent.id, "front");
+      onUpdateComponent(componentId, {
+        style: { ...currentStyle, zIndex: nextZ }
+      });
     };
 
     const undo = () => {
-      // Undo not implemented for Z-index yet
+      onUpdateComponent(componentId, {
+        style: { ...currentStyle, zIndex: previousZIndex }
+      });
     };
 
     addToHistory({ execute, undo });
     execute();
-  }, [selectedComponent, onReorderComponent, addToHistory]);
+    }, [selectedComponent, onUpdateComponent, addToHistory, activePageId]);
 
   // Send to Back
   const sendToBack = useCallback(() => {
