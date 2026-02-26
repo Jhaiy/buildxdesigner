@@ -38,6 +38,19 @@ type Action = {
   supabaseUrl?: string;
   supabaseKey?: string;
   supabaseData?: Record<string, string>;
+  supabaseFilters?: { column: string; operator: string; value: string }[];
+  supabaseSelectColumns?: string;
+
+  // For chaining actions
+  onSuccessActionId?: string;
+  onErrorActionId?: string;
+  onSuccessUrl?: string;
+  onErrorUrl?: string;
+
+  // For conditional logic
+  conditionCode?: string;
+  trueActionId?: string;
+  falseActionId?: string;
 };
 
 import { ComponentData } from '../App';
@@ -369,230 +382,322 @@ export function PreviewModal({ components, onClose, activePageId = 'home', pages
     if (component.type === 'button' && component.props?.actions?.length) {
       const onClickActions = component.props.actions.filter((a: any) => a.type === 'onClick');
 
-      // Handle navigation actions immediately
-      const navigateAction = onClickActions.find((a: any) => a.handlerType === 'navigate');
-      if (navigateAction && navigateAction.url) {
-        console.log('Executing navigation action:', navigateAction);
+      const executeSinglePreviewAction = async (action: any): Promise<void> => {
+        if (!action) return;
 
-        const isInternal = navigateAction.url.startsWith('/') || navigateAction.url.startsWith('./');
-        if (isInternal && (!navigateAction.target || navigateAction.target === '_self')) {
-          handleNavigate(navigateAction.url);
-        } else {
-          window.open(navigateAction.url, navigateAction.target || '_blank');
-        }
-        return;
-      }
-
-      // Handle copy to clipboard actions
-      const copyAction = onClickActions.find((a: any) => a.handlerType === 'copy' && a.textToCopy);
-      if (copyAction) {
-        console.log('Executing copy action:', copyAction);
-        navigator.clipboard.writeText(copyAction.textToCopy || '').catch(console.error);
-        return;
-      }
-
-      // Handle scroll to element actions
-      const scrollAction = onClickActions.find((a: any) => a.handlerType === 'scroll' && a.selector);
-      if (scrollAction) {
-        console.log('--- SCROLL ACTION TRIGGERED ---');
-        console.log('Component:', component);
-        console.log('All Actions:', component.props?.actions);
-        console.log('Scroll Action:', scrollAction);
-        console.log('Target Selector:', scrollAction.selector);
-
-        const root = contentRef.current || document;
-        scrollToTarget(scrollAction.selector, 2000, root).then(success => {
-          console.log('Scroll result:', success ? 'SUCCESS' : 'FAILED');
-        });
-        return;
-      }
-
-      // Handle toggle element actions
-      const toggleAction = onClickActions.find((a: any) => a.handlerType === 'toggle' && a.selector);
-      if (toggleAction) {
-        console.log('Executing toggle action:', toggleAction);
-
-        // Use generated handler if available
-        if (toggleAction.handler) {
+        const executeHandler = async () => {
           try {
-            const handlerFn = new Function('event', 'props', toggleAction.handler);
-            handlerFn(e, component.props);
-            return;
-          } catch (err) {
-            console.error('Error executing generated toggle handler:', err);
-          }
-        }
-
-        const selector = toggleAction.selector;
-        const cleanId = selector.startsWith('#') ? selector.substring(1) : selector;
-        const cleanSelector = selector.replace(/'/g, "\\'");
-
-        let elements = document.querySelectorAll(selector);
-
-        if (elements.length === 0) {
-          // Try by ID and data-component-id
-          elements = document.querySelectorAll(`[id="${cleanId}"], [data-component-id="${cleanId}"]`);
-          if (elements.length === 0 && !selector.startsWith('#') && !selector.startsWith('.')) {
-            elements = document.querySelectorAll(`#${cleanSelector}`);
-          }
-        }
-
-        if (elements.length > 0) {
-          elements.forEach(element => {
-            if (typeof toggleAction.toggleState === 'boolean') {
-              // Use the toggleState if provided
-              (element as HTMLElement).style.display = toggleAction.toggleState ? 'block' : 'none';
-            } else {
-              // Toggle based on current state
-              const currentDisplay = window.getComputedStyle(element as Element).display;
-              (element as HTMLElement).style.display = currentDisplay === 'none' ? 'block' : 'none';
-            }
-          });
-          console.log(`Toggled ${elements.length} element(s) with selector:`, toggleAction.selector);
-        } else {
-          console.error('No elements found with selector:', toggleAction.selector);
-        }
-        return;
-      }
-
-      // Handle custom actions
-      const customAction = onClickActions.find((a: any) => a.handlerType === 'custom' && a.handler);
-      if (customAction) {
-        console.log('Executing custom action:', customAction);
-        try {
-          const actionFn = new Function('event', 'props', `
-            try {
-              ${customAction.handler}
-            } catch (err) {
-              console.error('Error in custom action:', err);
-            }
-          `);
-          actionFn(e, component.props);
-        } catch (error) {
-          console.error('Error executing custom action:', error);
-        }
-        return;
-      }
-      // Handle Supabase actions
-      const supabaseAction = onClickActions.find((a: any) => a.handlerType === 'supabase' && a.supabaseTable);
-      if (supabaseAction) {
-        console.log('Executing Supabase action:', supabaseAction);
-        const table = supabaseAction.supabaseTable;
-        const operation = supabaseAction.supabaseOperation || 'insert';
-        const dataMapping = supabaseAction.supabaseData || {};
-
-        // Resolve data from input elements if mapped
-        const recordData: Record<string, any> = {};
-
-        Object.entries(dataMapping).forEach(([rawCol, valOrId]) => {
-          const col = (rawCol as string).trim();
-          if (!col) return;
-
-          const valAsString = valOrId as string;
-          const cleanId = valAsString.startsWith('#') ? valAsString.substring(1) : valAsString;
-
-          let element: any = null;
-          const allElements = document.querySelectorAll(`[id="${cleanId}"]`);
-
-          if (allElements.length > 0) {
-            const previewElement = Array.from(allElements).find(el => el.closest('.preview-container'));
-            if (previewElement) {
-              element = previewElement;
-            } else {
-              element = allElements[allElements.length - 1]; // Fallback
-            }
-          } else {
-            element = document.querySelector(`.preview-container ${valAsString}`);
-          }
-
-          if (element && ('value' in element)) {
-            recordData[col] = element.value;
-            console.log(`[Supabase Preview] Mapped "${col}" to input value: "${element.value}"`);
-          } else if (element) {
-            recordData[col] = element.innerText;
-            console.log(`[Supabase Preview] Mapped "${col}" to text content: "${element.innerText}"`);
-          } else {
-            recordData[col] = valAsString;
-            console.log(`[Supabase Preview] Mapped "${col}" to static/not-found value: "${valAsString}"`);
-          }
-        });
-
-        (async () => {
-          try {
-            console.log(`[Supabase Preview] Executing ${operation} on "${table}"`);
-
-            let client = supabase;
-            if (supabaseAction.supabaseUrl && supabaseAction.supabaseKey) {
-              client = createClient(supabaseAction.supabaseUrl, supabaseAction.supabaseKey);
-            } else if (userProjectConfig?.supabaseUrl && userProjectConfig?.supabaseKey) {
-              client = createClient(userProjectConfig.supabaseUrl, userProjectConfig.supabaseKey);
+            // Handle navigation actions
+            if (action.handlerType === 'navigate' && action.url) {
+              console.log('Executing navigation action:', action);
+              const isInternal = action.url.startsWith('/') || action.url.startsWith('./');
+              if (isInternal && (!action.target || action.target === '_self')) {
+                handleNavigate(action.url);
+              } else {
+                window.open(action.url, action.target || '_blank');
+              }
+              return true;
             }
 
-            let result;
-            if (operation === 'insert') {
-              result = await client.from(table).insert(recordData);
-            } else if (operation === 'select') {
-              let query = client.from(table).select('*');
+            // Handle copy to clipboard actions
+            if (action.handlerType === 'copy' && action.textToCopy) {
+              console.log('Executing copy action:', action);
+              await navigator.clipboard.writeText(action.textToCopy || '');
+              return true;
+            }
 
-              Object.entries(recordData).forEach(([key, value]) => {
-                if (value) {
-                  query = query.eq(key, value);
+            // Handle scroll to element actions
+            if (action.handlerType === 'scroll' && action.selector) {
+              console.log('Executing scroll action to:', action.selector);
+              const root = contentRef.current || document;
+              const success = await scrollToTarget(action.selector, 2000, root);
+              return success;
+            }
+
+            // Handle toggle element actions
+            if (action.handlerType === 'toggle' && action.selector) {
+              console.log('Executing toggle action:', action);
+
+              const selector = action.selector;
+              const cleanId = selector.startsWith('#') ? selector.substring(1) : selector;
+              const cleanSelector = selector.replace(/'/g, "\\'");
+
+              let elements = document.querySelectorAll(selector);
+
+              if (elements.length === 0) {
+                // Try by ID and data-component-id
+                elements = document.querySelectorAll(`[id="${cleanId}"], [data-component-id="${cleanId}"]`);
+                if (elements.length === 0 && !selector.startsWith('#') && !selector.startsWith('.')) {
+                  elements = document.querySelectorAll(`#${cleanSelector}`);
+                }
+              }
+
+              if (elements.length > 0) {
+                elements.forEach(element => {
+                  if (typeof action.toggleState === 'boolean') {
+                    // Use the toggleState if provided
+                    (element as HTMLElement).style.display = action.toggleState ? 'block' : 'none';
+                  } else {
+                    // Toggle based on current state
+                    const currentDisplay = window.getComputedStyle(element as Element).display;
+                    (element as HTMLElement).style.display = currentDisplay === 'none' ? 'block' : 'none';
+                  }
+                });
+                console.log(`Toggled ${elements.length} element(s) with selector:`, action.selector);
+                return true;
+              } else {
+                console.error('No elements found with selector:', action.selector);
+                return false;
+              }
+            }
+
+            // Handle custom scripts
+            if (action.handlerType === 'custom' && action.handler) {
+              console.log('Executing custom action:', action);
+              const actionFn = new Function('event', 'props', `
+                try {
+                  ${action.handler}
+                } catch (err) {
+                  console.error('Error in custom action:', err);
+                  return false;
+                }
+                return true;
+              `);
+              return actionFn(e, component.props);
+            }
+
+            // Handle Supabase actions
+            if (action.handlerType === 'supabase' && action.supabaseTable) {
+              console.log('Executing Supabase action:', action);
+              const table = action.supabaseTable;
+              const operation = action.supabaseOperation || 'insert';
+              const dataMapping = action.supabaseData || {};
+
+              // Resolve data from input elements if mapped
+              const recordData: Record<string, any> = {};
+
+              Object.entries(dataMapping).forEach(([rawCol, valOrId]) => {
+                const col = (rawCol as string).trim();
+                if (!col) return;
+
+                const valAsString = valOrId as string;
+                const cleanId = valAsString.startsWith('#') ? valAsString.substring(1) : valAsString;
+
+                let element: any = null;
+                const allElements = document.querySelectorAll(`[id="${cleanId}"]`);
+
+                if (allElements.length > 0) {
+                  const previewElement = Array.from(allElements).find(el => el.closest('.preview-container'));
+                  if (previewElement) {
+                    element = previewElement;
+                  } else {
+                    element = allElements[allElements.length - 1]; // Fallback
+                  }
+                } else {
+                  element = document.querySelector(`.preview-container ${valAsString}`);
+                }
+
+                if (element && ('value' in element)) {
+                  recordData[col] = element.value;
+                  console.log(`[Supabase Preview] Mapped "${col}" to input value: "${element.value}"`);
+                } else if (element) {
+                  recordData[col] = element.innerText;
+                  console.log(`[Supabase Preview] Mapped "${col}" to text content: "${element.innerText}"`);
+                } else {
+                  recordData[col] = valAsString;
+                  console.log(`[Supabase Preview] Mapped "${col}" to static/not-found value: "${valAsString}"`);
                 }
               });
 
-              result = await query;
-              console.log('[Supabase Preview] Select Result:', result.data);
+              let client = supabase;
+              if (action.supabaseUrl && action.supabaseKey) {
+                client = createClient(action.supabaseUrl, action.supabaseKey);
+              } else if (userProjectConfig?.supabaseUrl && userProjectConfig?.supabaseKey) {
+                client = createClient(userProjectConfig.supabaseUrl, userProjectConfig.supabaseKey);
+              }
 
-              if (result.data) {
-                toast.success('Select Query Successful', {
-                  description: `Found ${result.data.length} records. Check console for details.`
+              let query: any = client.from(table);
+
+              if (operation === 'insert') {
+                query = query.insert(recordData).select();
+              } else if (operation === 'select') {
+                query = query.select(action.supabaseSelectColumns || '*');
+
+                Object.entries(recordData).forEach(([key, value]) => {
+                  if (value) {
+                    query = query.eq(key, value);
+                  }
                 });
-                console.log('First 3 records:', result.data.slice(0, 3));
+              } else if (operation === 'update') {
+                if (!action.supabaseFilters || action.supabaseFilters.length === 0) {
+                  if (recordData.id) {
+                    const { id, ...updateData } = recordData;
+                    query = query.update(updateData).eq('id', id).select();
+                  } else {
+                    throw new Error('Update requires an "id" type field inside mapping data.');
+                  }
+                } else {
+                  query = query.update(recordData).select();
+                }
+              } else if (operation === 'delete') {
+                if (!action.supabaseFilters || action.supabaseFilters.length === 0) {
+                  if (recordData.id) {
+                    query = query.delete().eq('id', recordData.id).select();
+                  } else {
+                    throw new Error('Delete requires an "id" type field internally.');
+                  }
+                } else {
+                  query = query.delete().select();
+                }
               }
-            } else if (operation === 'update') {
-              if (recordData.id) {
-                const { id, ...updateData } = recordData;
-                result = await client.from(table).update(updateData).eq('id', id);
-              } else {
-                console.error('[Supabase Preview] Update requires an "id" field in the data mapping');
-                return;
+
+              if (operation !== 'insert' && action.supabaseFilters && action.supabaseFilters.length > 0) {
+                action.supabaseFilters.forEach((filter: any) => {
+                  if (!filter.column || !filter.value) return;
+
+                  let filterValue = filter.value;
+                  const cleanId = filterValue.startsWith('#') ? filterValue.substring(1) : filterValue;
+
+                  let refElement: any = null;
+                  const allElements = document.querySelectorAll(`[id="${cleanId}"]`);
+
+                  if (allElements.length > 0) {
+                    const previewElement = Array.from(allElements).find(el => el.closest('.preview-container'));
+                    if (previewElement) {
+                      refElement = previewElement;
+                    } else {
+                      refElement = allElements[allElements.length - 1]; // Fallback
+                    }
+                  }
+
+                  if (refElement && ('value' in refElement)) {
+                    filterValue = refElement.value;
+                  } else if (refElement) {
+                    filterValue = refElement.innerText;
+                  }
+
+                  switch (filter.operator) {
+                    case 'eq': query = query.eq(filter.column, filterValue); break;
+                    case 'neq': query = query.neq(filter.column, filterValue); break;
+                    case 'gt': query = query.gt(filter.column, filterValue); break;
+                    case 'gte': query = query.gte(filter.column, filterValue); break;
+                    case 'lt': query = query.lt(filter.column, filterValue); break;
+                    case 'lte': query = query.lte(filter.column, filterValue); break;
+                    case 'like': query = query.like(filter.column, filterValue); break;
+                    case 'ilike': query = query.ilike(filter.column, filterValue); break;
+                    default: query = query.eq(filter.column, filterValue); break;
+                  }
+                });
               }
-            } else if (operation === 'delete') {
-              if (recordData.id) {
-                result = await client.from(table).delete().eq('id', recordData.id);
-              } else {
-                console.error('[Supabase Preview] Delete requires an "id" field type');
-                return;
+
+              console.log(`[Supabase Preview] Executing ${operation} on "${table}"`);
+              const result = await query;
+
+              if (operation === 'select') {
+                console.log('[Supabase Preview] Select Result:', result.data);
+                (window as any).supabaseData = result.data;
+
+                if (result.data) {
+                  toast.success('Select Query Successful', {
+                    description: `Found ${result.data.length} records. Check console for details.`
+                  });
+                  console.log('First 3 records:', result.data.slice(0, 3));
+                }
               }
+
+              if (result && result.error) throw result.error;
+
+              if (result) {
+                console.log("Supabase Operation Success:", result);
+                toast.success('Action Completed', {
+                  description: `${operation.charAt(0).toUpperCase() + operation.slice(1)} operation completed successfully`
+                });
+
+                if (operation === 'insert' || operation === 'update' || operation === 'delete') {
+                  console.log('Dispatching supabase-data-update event for table:', table);
+                  window.dispatchEvent(new CustomEvent('supabase-data-update', {
+                    detail: { table, operation }
+                  }));
+                }
+              }
+
+              return true;
             }
 
-            if (result && result.error) {
-              console.error("Supabase Operation Error:", result.error);
-              toast.error('Supabase Operation Failed', {
-                description: result.error.message
-              });
-            } else if (result) {
-              console.log("Supabase Operation Success:", result);
-              toast.success('Action Completed', {
-                description: `${operation.charAt(0).toUpperCase() + operation.slice(1)} operation completed successfully`
-              });
+            // Handle condition blocks
+            if (action.handlerType === 'condition' && action.conditionCode) {
+              console.log('Evaluating Condition Action...');
+              const conditionFn = new Function('event', 'props', `
+                  try {
+                     ${action.conditionCode}
+                  } catch (err) {
+                     console.error('Condition Evaluation Error:', err);
+                     return false;
+                  }
+               `);
 
-              if (operation === 'insert' || operation === 'update' || operation === 'delete') {
-                console.log('Dispatching supabase-data-update event for table:', table);
-                window.dispatchEvent(new CustomEvent('supabase-data-update', {
-                  detail: { table, operation }
-                }));
+              const isTrue = conditionFn(e, component.props);
+              console.log(`Condition Evaluated: ${isTrue}`);
+
+              if (isTrue && action.trueActionId && action.trueActionId !== 'none') {
+                const trueAction = onClickActions.find((a: any) => a.id === action.trueActionId);
+                if (trueAction) await executeSinglePreviewAction(trueAction);
+              } else if (!isTrue && action.falseActionId && action.falseActionId !== 'none') {
+                const falseAction = onClickActions.find((a: any) => a.id === action.falseActionId);
+                if (falseAction) await executeSinglePreviewAction(falseAction);
               }
+              return true;
             }
-          } catch (err) {
-            console.error('[Supabase Preview] Exception:', err);
-            toast.error('Unexpected Error', {
-              description: 'An unexpected error occurred. Check console for details.'
+
+            return false;
+          } catch (error: any) {
+            console.error('Error executing preview action:', error);
+            toast.error("Action Execution Failed", {
+              description: error.message || "An error occurred while running the action."
             });
+            return false;
           }
-        })();
-        return;
-      }
+        };
+
+        const success = await executeHandler();
+
+        // Execute chains
+        if (success) {
+          if (action.onSuccessUrl && action.onSuccessUrl !== 'none') {
+            console.log('Chaining success navigation to:', action.onSuccessUrl);
+            handleNavigate(action.onSuccessUrl);
+          } else if (action.onSuccessActionId && action.onSuccessActionId !== 'none') {
+            const nextAction = onClickActions.find((a: any) => a.id === action.onSuccessActionId);
+            if (nextAction && nextAction.id !== action.id) {
+              await executeSinglePreviewAction(nextAction);
+            }
+          }
+        } else {
+          if (action.onErrorUrl && action.onErrorUrl !== 'none') {
+            console.log('Chaining error navigation to:', action.onErrorUrl);
+            handleNavigate(action.onErrorUrl);
+          } else if (action.onErrorActionId && action.onErrorActionId !== 'none') {
+            const errAction = onClickActions.find((a: any) => a.id === action.onErrorActionId);
+            if (errAction && errAction.id !== action.id) {
+              await executeSinglePreviewAction(errAction);
+            }
+          }
+        }
+      };
+
+      const chainedActionIds = new Set<string>();
+      onClickActions.forEach((a: any) => {
+        if (a.onSuccessActionId && a.onSuccessActionId !== 'none') chainedActionIds.add(a.onSuccessActionId);
+        if (a.onErrorActionId && a.onErrorActionId !== 'none') chainedActionIds.add(a.onErrorActionId);
+        if (a.trueActionId && a.trueActionId !== 'none') chainedActionIds.add(a.trueActionId);
+        if (a.falseActionId && a.falseActionId !== 'none') chainedActionIds.add(a.falseActionId);
+      });
+
+      const rootActions = onClickActions.filter((a: any) => !chainedActionIds.has(a.id));
+
+      rootActions.forEach((rootAction: any) => {
+        executeSinglePreviewAction(rootAction);
+      });
     }
   }, [userProjectConfig]);
 

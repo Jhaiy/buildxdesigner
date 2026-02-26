@@ -9,6 +9,7 @@ export function initializeCollaborationDoc(
 ) {
   const ydocRef = useRef<Y.Doc | null>(null);
   const yComponentsRef = useRef<Y.Array<ComponentData> | null>(null);
+  const yPagesRef = useRef<Y.Array<any> | null>(null);
   const awarenessRef = useRef<Awareness | null>(null);
   const localChangeRef = { current: false };
 
@@ -17,11 +18,13 @@ export function initializeCollaborationDoc(
       ydocRef.current = new Y.Doc();
       yComponentsRef.current =
         ydocRef.current.getArray<ComponentData>("components");
+      yPagesRef.current = ydocRef.current.getArray<any>("pages");
       awarenessRef.current = new Awareness(ydocRef.current);
     }
     return {
       ydoc: ydocRef.current,
       yComponents: yComponentsRef.current!,
+      yPages: yPagesRef.current!,
       awareness: awarenessRef.current!,
     };
   };
@@ -34,6 +37,17 @@ export function initializeCollaborationDoc(
     yComponents.delete(0, yComponents.length);
     if (components.length > 0) {
       yComponents.push(components);
+    }
+  };
+
+  const replacePages = (pages: any[], markLocal = true) => {
+    const { yPages } = getOrInitDoc();
+    if (markLocal) {
+      localChangeRef.current = true;
+    }
+    yPages.delete(0, yPages.length);
+    if (pages.length > 0) {
+      yPages.push(pages);
     }
   };
 
@@ -124,6 +138,7 @@ export function initializeCollaborationDoc(
   return {
     getOrInitDoc,
     replaceComponents,
+    replacePages,
     addComponent,
     updateComponent,
     deleteComponent,

@@ -48,6 +48,7 @@ function useCollaborationLogic({
   const {
     getOrInitDoc,
     replaceComponents,
+    replacePages,
     addComponent,
     updateComponent,
     deleteComponent,
@@ -89,7 +90,8 @@ function useCollaborationLogic({
   }, [state.currentView, activeProjectId, replaceComponents]);
 
   useEffect(() => {
-    const { yComponents } = getOrInitDoc();
+    const { yComponents, yPages } = getOrInitDoc();
+
     const handleYComponentsChange = () => {
       const components = yComponents.toArray();
       const isLocalChanges = consumeLocalChangeFlag();
@@ -100,11 +102,25 @@ function useCollaborationLogic({
         hasUnsavedChanges: isLocalChanges ? true : prev.hasUnsavedChanges,
       }));
     };
+
+    const handleYPagesChange = () => {
+      const pages = yPages.toArray();
+      if (isHydratingRef.current && pages.length === 0) return;
+      setState((prev) => ({
+        ...prev,
+        pages: pages.length > 0 ? pages : prev.pages,
+      }));
+    };
+
     yComponents.observe(handleYComponentsChange);
+    yPages.observe(handleYPagesChange);
+
     handleYComponentsChange();
+    handleYPagesChange();
 
     return () => {
       yComponents.unobserve(handleYComponentsChange);
+      yPages.unobserve(handleYPagesChange);
     };
   }, [getOrInitDoc, setState]);
 
@@ -182,17 +198,7 @@ function useCollaborationLogic({
 
     (async () => {
       try {
-        const { yComponents } = getOrInitDoc();
-
-        if (yComponents.length > 0) {
-          hydratedProjectRef.current = activeProjectId;
-          setState((prev) => ({
-            ...prev,
-            components: yComponents.toArray(),
-            hasUnsavedChanges: false,
-          }));
-          return;
-        }
+        const { yComponents, yPages } = getOrInitDoc();
 
         const [
           { data: projectData, error: projectError },
@@ -203,6 +209,20 @@ function useCollaborationLogic({
         ]);
 
         if (cancelled) return;
+
+        // Always set basic metadata regardless of Yjs state
+        if (projectData) {
+          setState((prev) => ({
+            ...prev,
+            projectName: projectData.name || prev.projectName,
+            siteTitle: projectData.siteTitle || prev.siteTitle,
+            siteLogoUrl: projectData.siteLogoUrl || prev.siteLogoUrl,
+            projectSubdomain: projectData.subdomain || prev.projectSubdomain,
+            projectIsPublished: projectData.isPublished || prev.projectIsPublished,
+            projectLastPublishedAt: projectData.lastPublishedAt || prev.projectLastPublishedAt,
+          }));
+        }
+
         const loadedProject =
           componentsData && componentsData.length > 0
             ? componentsData
@@ -210,27 +230,25 @@ function useCollaborationLogic({
 
         const canHydrateFromDatabase =
           loadedProject.length > 0 || !projectError;
-        if (!canHydrateFromDatabase) {
-          return;
+
+        if (canHydrateFromDatabase) {
+          // Hydrate components if Yjs is empty
+          if (yComponents.length === 0) {
+            replaceComponents(loadedProject, false);
+          }
+
+          // Hydrate pages if Yjs is empty
+          if (yPages.length === 0 && projectData?.pages) {
+            replacePages(projectData.pages, false);
+          }
         }
 
-        const hasRemoteOrLocalData = yComponents.length > 0;
-        if (!hasRemoteOrLocalData) {
-          replaceComponents(loadedProject, false);
-        }
-
-        const finalComponents = yComponents.toArray();
         hydratedProjectRef.current = activeProjectId;
 
         setState((prev) => ({
           ...prev,
-          projectName:
-            (projectData as any)?.project_name ??
-            (projectData as any)?.name ??
-            prev.projectName,
-          components: finalComponents,
-          pages: (projectData as any)?.pages ?? prev.pages,
-          activePageId: prev.activePageId, // Might be better to keep as is, or switch to the first page if 'home' is not in the list
+          components: yComponents.toArray(),
+          pages: yPages.length > 0 ? yPages.toArray() : (projectData?.pages || prev.pages),
           hasUnsavedChanges: false,
         }));
       } finally {
@@ -304,6 +322,9 @@ function useCollaborationLogic({
             name: state.projectName || "Untitled Project",
             user_id,
             project_layout: currentComponents,
+            pages: state.pages,
+            siteTitle: state.siteTitle,
+            siteLogoUrl: state.siteLogoUrl,
           });
 
           persisted = !saveError;
@@ -364,6 +385,9 @@ function useCollaborationLogic({
     state.currentView,
     state.currentProjectId,
     state.projectName,
+    state.pages,
+    state.siteTitle,
+    state.siteLogoUrl,
     state.hasUnsavedChanges,
     state.isSaving,
   ]);
@@ -371,6 +395,7 @@ function useCollaborationLogic({
   return {
     getOrInitDoc,
     replaceComponents,
+    replacePages,
     addComponent,
     updateComponent,
     deleteComponent,

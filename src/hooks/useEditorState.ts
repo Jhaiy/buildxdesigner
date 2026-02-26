@@ -120,6 +120,7 @@ export function useEditorState() {
   const {
     getOrInitDoc,
     replaceComponents,
+    replacePages,
     addComponent: rawAddComponent,
     updateComponent,
     deleteComponent,
@@ -147,7 +148,7 @@ export function useEditorState() {
   // ==================== AUTO-SAVE METADATA ====================
   // Save metadata like pages and project name whenever they change
   useEffect(() => {
-    if (!state.currentProjectId || !isAuthenticated) return;
+    if (!state.currentProjectId || !isAuthenticated || !state.hasUnsavedChanges) return;
 
     const timer = setTimeout(async () => {
       try {
@@ -157,6 +158,8 @@ export function useEditorState() {
           name: state.projectName,
           user_id: currentUser?.id || "",
           pages: state.pages,
+          siteTitle: state.siteTitle,
+          siteLogoUrl: state.siteLogoUrl,
           // We also include components from state to keep the JSON column in sync
           project_layout: state.components,
         });
@@ -166,7 +169,7 @@ export function useEditorState() {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [state.pages, state.projectName, state.currentProjectId, isAuthenticated, currentUser?.id, state.components]);
+  }, [state.pages, state.projectName, state.siteTitle, state.siteLogoUrl, state.currentProjectId, isAuthenticated, currentUser?.id, state.components]);
 
   // ==================== AUTH ====================
 
@@ -245,7 +248,7 @@ export function useEditorState() {
       }
 
       setIsAuthenticated(loggedIn);
-      
+
       // Check onboarding status
       if (loggedIn && session?.user) {
         const onboardingCompleted = session.user.user_metadata?.onboarding_completed;
@@ -253,7 +256,7 @@ export function useEditorState() {
           setShowOnboarding(true);
         }
       }
-      
+
       setAuthLoading(false);
 
       const savedView = localStorage.getItem("fulldev-ai-current-view");
@@ -740,6 +743,9 @@ export function useEditorState() {
           name: state.projectName || "Untitled Project",
           user_id,
           project_layout: currentComponents,
+          pages: state.pages,
+          siteTitle: state.siteTitle,
+          siteLogoUrl: state.siteLogoUrl,
         });
 
         setState((prev) => ({
@@ -1006,13 +1012,15 @@ export function useEditorState() {
 
   const addPage = (name: string, path: string) => {
     const newPage = { id: `page-${Date.now().toString()}`, name, path };
+    const newPages = [...state.pages, newPage];
     setState((prev) => ({
       ...prev,
-      pages: [...prev.pages, newPage],
+      pages: newPages,
       activePageId: newPage.id,
       selectedComponent: null,
       hasUnsavedChanges: true,
     }));
+    replacePages(newPages);
   };
 
   const deletePage = (pageId: string) => {
@@ -1020,9 +1028,15 @@ export function useEditorState() {
       if (prev.pages.length <= 1) return prev; // Cannot delete last page
       const newPages = prev.pages.filter(p => p.id !== pageId);
       const newActiveId = prev.activePageId === pageId ? newPages[0].id : prev.activePageId;
+      // Also remove components belonging to this page
+      const newComponents = prev.components.filter(c => c.page_id !== pageId);
+
+      replacePages(newPages);
+
       return {
         ...prev,
         pages: newPages,
+        components: newComponents,
         activePageId: newActiveId,
         selectedComponent: null,
         hasUnsavedChanges: true,

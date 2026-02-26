@@ -106,6 +106,7 @@ interface EditorTopBarProps {
   activePageId?: string;
   onSwitchPage?: (pageId: string) => void;
   onAddPage?: (name: string, path: string) => void;
+  onDeletePage?: (pageId: string) => void;
 }
 
 export function EditorTopBar({
@@ -135,6 +136,7 @@ export function EditorTopBar({
   activePageId,
   onSwitchPage,
   onAddPage,
+  onDeletePage,
 }: EditorTopBarProps) {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [tempProjectName, setTempProjectName] = useState(projectName);
@@ -496,6 +498,7 @@ export function EditorTopBar({
             activePageId={activePageId}
             onSwitchPage={onSwitchPage}
             onAddPage={onAddPage}
+            onRemovePage={onDeletePage}
           />
         )}
 
