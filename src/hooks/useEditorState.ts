@@ -120,6 +120,7 @@ export function useEditorState() {
   const {
     getOrInitDoc,
     replaceComponents,
+    replacePages,
     addComponent: rawAddComponent,
     updateComponent,
     deleteComponent,
@@ -1011,13 +1012,15 @@ export function useEditorState() {
 
   const addPage = (name: string, path: string) => {
     const newPage = { id: `page-${Date.now().toString()}`, name, path };
+    const newPages = [...state.pages, newPage];
     setState((prev) => ({
       ...prev,
-      pages: [...prev.pages, newPage],
+      pages: newPages,
       activePageId: newPage.id,
       selectedComponent: null,
       hasUnsavedChanges: true,
     }));
+    replacePages(newPages);
   };
 
   const deletePage = (pageId: string) => {
@@ -1027,6 +1030,8 @@ export function useEditorState() {
       const newActiveId = prev.activePageId === pageId ? newPages[0].id : prev.activePageId;
       // Also remove components belonging to this page
       const newComponents = prev.components.filter(c => c.page_id !== pageId);
+
+      replacePages(newPages);
 
       return {
         ...prev,
