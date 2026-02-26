@@ -345,21 +345,24 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                     </div>
                   )}
 
-                  {state.viewMode === "code" && (
-                    <div className="flex-1 flex flex-col h-full overflow-hidden bg-card">
-                      <CodeViewEditor
-                        components={state.components.filter(c => c.page_id === state.activePageId || c.page_id === 'all' || (!c.page_id && state.activePageId === 'home'))}
-                        userProjectConfig={state.userProjectConfig}
-                        onCodeChange={(newComponents) =>
-                          setState((prev) => ({
-                            ...prev,
-                            components: newComponents,
-                            hasUnsavedChanges: true,
-                          }))
-                        }
-                      />
-                    </div>
-                  )}
+                {state.viewMode === "code" && (
+                  <div className="flex-1 flex flex-col h-full overflow-hidden bg-card">
+                    <CodeViewEditor
+                      components={state.components}
+                      projectName={state.projectName}
+                      // PASS THESE NEW PROPS:
+                      pages={state.pages}
+                      activePageId={state.activePageId}
+                      onCodeChange={(newComponents) =>
+                        setState((prev) => ({
+                          ...prev,
+                          components: newComponents,
+                          hasUnsavedChanges: true,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
                 </div>
               </div>
             </div>
