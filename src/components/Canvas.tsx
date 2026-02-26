@@ -581,17 +581,6 @@ export function Canvas({
   }, [components, projectId, projectName, readOnly]);
 
   // Load components from localStorage on initial render
-  useEffect(() => {
-    try {
-      const savedComponents = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (savedComponents) {
-        const parsedComponents = JSON.parse(savedComponents);
-        console.log("Loaded components from localStorage:", parsedComponents);
-      }
-    } catch (error) {
-      console.error("Error loading components from localStorage:", error);
-    }
-  }, []);
 
   const [{ isOver }, drop] = useDrop({
     accept: "component",

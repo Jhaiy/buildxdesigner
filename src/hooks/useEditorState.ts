@@ -61,6 +61,7 @@ export function useEditorState() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string>("/index.html");
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const exportSnapshotRef = useRef<ComponentData[]>([]);
 
   const [currentUser, setCurrentUser] = useState<{
     id: string;
@@ -115,6 +116,7 @@ export function useEditorState() {
     projectSubdomain: undefined as string | undefined,
     projectIsPublished: undefined as boolean | undefined,
     projectLastPublishedAt: undefined as string | undefined,
+    exportSnapshot: [],
   });
 
   const {
@@ -491,8 +493,17 @@ export function useEditorState() {
 
   const togglePreview = () =>
     setState((prev) => ({ ...prev, showPreview: !prev.showPreview }));
-  const toggleCodeExport = () =>
-    setState((prev) => ({ ...prev, showCodeExport: !prev.showCodeExport }));
+  const toggleCodeExport = () => {
+  const { yComponents } = getOrInitDoc();
+  const snapshot = yComponents.toArray();
+  const captured = snapshot.length > 0 ? snapshot : state.components;
+  
+  setState((prev) => ({ 
+    ...prev, 
+    showCodeExport: !prev.showCodeExport,
+    exportSnapshot: !prev.showCodeExport ? captured : prev.exportSnapshot
+  }));
+};
   const toggleTemplates = () =>
     setState((prev) => ({ ...prev, showTemplates: !prev.showTemplates }));
   const togglePublishModal = () =>
@@ -1128,6 +1139,9 @@ const handleMoveLayer = (id: string, action: 'forward' | 'backward') => {
     setSelectedFile,
     currentUser,
     remoteCursors,
+    getOrInitDoc,
+    // In the return:
+exportSnapshot: exportSnapshotRef.current,
 
     // Component operations
     addComponent,

@@ -71,4 +71,5 @@ export interface EditorState {
   projectLastPublishedAt?: string;
   siteTitle?: string;
   siteLogoUrl?: string;
+  exportSnapshot: ComponentData[];
 }

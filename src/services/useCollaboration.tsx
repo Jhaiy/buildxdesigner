@@ -74,20 +74,24 @@ function useCollaborationLogic({
     }
   }, [state.currentView]);
 
-  useEffect(() => {
-    if (state.currentView !== "editor") return;
-    if (!activeProjectId) return;
+// In useCollaboration.ts - replace the problematic useEffect with this:
+useEffect(() => {
+  if (state.currentView !== "editor") return;
+  if (!activeProjectId) return;
 
-    if (
-      docProjectIdRef.current &&
-      docProjectIdRef.current !== activeProjectId
-    ) {
-      replaceComponents([], false);
-      hydratedProjectRef.current = null;
-    }
+  // Only clear if switching to a DIFFERENT project, not on every re-render
+  if (
+    docProjectIdRef.current &&
+    docProjectIdRef.current !== activeProjectId
+  ) {
+    replaceComponents([], false);
+    hydratedProjectRef.current = null;
+  }
 
-    docProjectIdRef.current = activeProjectId;
-  }, [state.currentView, activeProjectId, replaceComponents]);
+  docProjectIdRef.current = activeProjectId;
+// Remove replaceComponents from deps - it's stable enough via ref
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [state.currentView, activeProjectId]);
 
   useEffect(() => {
     const { yComponents, yPages } = getOrInitDoc();
@@ -95,20 +99,26 @@ function useCollaborationLogic({
     const handleYComponentsChange = () => {
       const components = yComponents.toArray();
       const isLocalChanges = consumeLocalChangeFlag();
-      if (isHydratingRef.current && components.length === 0) return;
-      setState((prev) => ({
-        ...prev,
-        components: components,
-        hasUnsavedChanges: isLocalChanges ? true : prev.hasUnsavedChanges,
-      }));
+      if (components.length === 0) return;
+setState((prev) => {
+  if (components.length === 0) {
+    console.trace("WHO IS CLEARING COMPONENTS TO []"); // ← ADD THIS
+    return prev;
+  }
+  return {
+    ...prev,
+    components: components,
+    hasUnsavedChanges: isLocalChanges ? true : prev.hasUnsavedChanges,
+  };
+});
     };
 
     const handleYPagesChange = () => {
       const pages = yPages.toArray();
-      if (isHydratingRef.current && pages.length === 0) return;
+      if (pages.length === 0) return;
       setState((prev) => ({
         ...prev,
-        pages: pages.length > 0 ? pages : prev.pages,
+        pages: pages,  
       }));
     };
 

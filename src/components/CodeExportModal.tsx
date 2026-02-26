@@ -34,6 +34,7 @@ interface CodeExportModalProps {
   components: ComponentData[]
   projectName?: string
   pages: { id: string; name: string; path: string }[]
+  activePageId: string
   onClose: () => void
 }
 
@@ -67,9 +68,17 @@ const buildFileTree = (paths: string[]): FileNode[] => {
   return root
 }
 
-export function CodeExportModal({ components, projectName = "leumar", pages, onClose }: CodeExportModalProps) {
-  const [selectedFile, setSelectedFile] = useState<string>("public/index.php")
+export function CodeExportModal({ components, projectName = "leumar", pages, activePageId, onClose }: CodeExportModalProps) {
+  const defaultFile = useMemo(() => {
+    const activePage = pages.find(p => p.id === activePageId) || pages[0];
+    return `app/views/${slugify(activePage.name)}.php`;
+  }, [pages, activePageId]);
+
+  const [selectedFile, setSelectedFile] = useState<string>(defaultFile);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["app", "app/views", "public", "public/assets", "public/assets/css"]))
+    const [resolvedComponents] = useState<ComponentData[]>(() => {
+    return components;
+  });
 
   // Use the shared generator ONLY - do not redeclare this variable later
   const getFiles = useMemo(() => 
@@ -163,7 +172,7 @@ export function CodeExportModal({ components, projectName = "leumar", pages, onC
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent 
-        className="max-w-6xl w-[95vw] h-[90vh] p-0 gap-0 flex flex-col overflow-hidden border-[#333] shadow-2xl !opacity-100 text-white backdrop-blur-none"
+        className="max-w-6xl w-[95vw] h-[90vh] p-0 gap-0 flex flex-col overflow-hidden border-[#333] shadow-2xl opacity-100! text-white backdrop-blur-none"
         style={{ backgroundColor: "#1e1e1e" }}
       >
         <DialogHeader className="sr-only">
