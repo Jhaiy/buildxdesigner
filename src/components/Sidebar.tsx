@@ -1,7 +1,6 @@
 "use client"
 
-import type React from "react"
-import { useState } from "react"
+import React, { useState, useRef } from "react"
 import { useDrag } from "react-dnd"
 import { Separator } from "./ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
@@ -32,26 +31,33 @@ interface DraggableComponentProps {
 }
 
 function DraggableComponent({ type, icon, label, props = {} }: DraggableComponentProps) {
+  // 1. Create the ref using the standard hook
+  const dragRef = useRef<HTMLDivElement>(null);
+
   const [{ isDragging }, drag] = useDrag({
     type: "component",
     item: { type, props },
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
-  })
+  });
+
+  // 2. Connect the drag source to the ref
+  drag(dragRef);
 
   return (
     <div
-      ref={drag}
-      className={`p-2 border rounded-md cursor-move hover:bg-accent transition-colors ${isDragging ? "opacity-50" : ""
-        }`}
+      ref={dragRef} // 3. Apply the ref here
+      className={`p-2 border rounded-md cursor-move hover:bg-accent transition-colors ${
+        isDragging ? "opacity-50" : ""
+      }`}
     >
       <div className="flex items-center gap-2">
         {icon}
         <span className="text-xs">{label}</span>
       </div>
     </div>
-  )
+  );
 }
 
 interface SidebarProps {
@@ -140,7 +146,7 @@ export function Sidebar({ onAddComponent, onToggle }: SidebarProps) {
       )}
 
       <Tabs defaultValue="blocks" className="flex flex-col h-full overflow-hidden">
-        <div className="border-b p-3 flex-shrink-0">
+        <div className="border-b p-3 shrink-0">
           <TabsList className="grid w-full grid-cols-2 h-8">
             <TabsTrigger value="blocks" className="flex items-center gap-1.5 text-xs h-7">
               <Blocks className="w-3.5 h-3.5" />
