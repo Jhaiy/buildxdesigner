@@ -429,12 +429,12 @@ export function Dashboard({
 
     const newProjectData: Partial<Project> & { user_id: string } = {
       name: trimmedProjectName,
-      description: `Drafts • Created ${new Date().toLocaleDateString()}`,
+      description: `Created ${new Date().toLocaleDateString()}`,
       thumbnail:
         "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=400&h=300&fit=crop",
       user_id: user_id,
       type: "design",
-      status: "draft",
+        status: "all",
     };
 
     const { data: savedProject, error: saveError } =
@@ -489,12 +489,12 @@ export function Dashboard({
 
     const newProjectData: Partial<Project> & { user_id: string } = {
       name: trimmedProjectName,
-      description: `Drafts • Created ${new Date().toLocaleDateString()}`,
+       description: `Created ${new Date().toLocaleDateString()}`,
       thumbnail:
         "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=400&h=300&fit=crop", // Use a generic default thumbnail
       user_id: user_id,
       type: "design",
-      status: "draft",
+      status: "all",
     };
 
     const { data: savedProject, error: saveError } =
@@ -547,12 +547,12 @@ export function Dashboard({
 
       const newProjectData: Partial<Project> & { user_id: string } = {
         name: "Untitled Project",
-        description: `Drafts • Created ${new Date().toLocaleDateString()}`,
+         description: `Created ${new Date().toLocaleDateString()}`,
         thumbnail:
           "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=400&h=300&fit=crop",
         user_id: user_id,
         type: "design",
-        status: "draft",
+         status: "all",
       };
 
       const { data: savedProject, error: saveError } =
@@ -599,7 +599,7 @@ export function Dashboard({
         thumbnail: project.thumbnail,
         user_id: user_id,
         type: project.type,
-        status: "draft",
+        status: "all",
         project_layout: project.project_layout,
       };
       const { data: duplicatedProject, error: duplicateError } =
@@ -657,6 +657,30 @@ export function Dashboard({
       console.error("Failed to delete project:", err);
       setProjectsLoading(false);
       alert("Failed to delete project. Check console for details.");
+    }
+  };
+
+   const handleMoveProjectToStatus = async (
+    projectId: string,
+    status: Project["status"],
+  ) => {
+    try {
+      setProjectsLoading(true);
+
+      const { error } = await supabase
+        .from("projects")
+        .update({ status })
+        .eq("projects_id", projectId);
+
+      if (error) {
+        throw error;
+      }
+
+      await reloadProjects();
+    } catch (err) {
+      console.error(`Failed to move project to ${status}:`, err);
+      setProjectsLoading(false);
+      alert(`Failed to move project to ${status}. Check console for details.`);
     }
   };
 
@@ -1290,12 +1314,12 @@ export function Dashboard({
         prompt.substring(0, 50) + (prompt.length > 50 ? "..." : "");
       const newProjectData: Partial<Project> & { user_id: string } = {
         name: initialProjectName,
-        description: "AI Generated Draft",
+        description: "AI Generated Project",
         thumbnail:
           "https://images.unsplash.com/photo-1557821552-17105176677c?w=400&h=300&fit=crop", // Generic thumbnail
         user_id: user_id,
         type: "design",
-        status: "draft",
+        status: "all",
       };
 
       const { data: savedProject, error: saveError } =
@@ -1563,8 +1587,21 @@ export function Dashboard({
                 : "text-muted-foreground hover:bg-muted"
                 }`}
             >
+
               <Sparkles className="w-4 h-4" />
               <span>New chat</span>
+            </button>
+
+             {/* All Projects */}
+            <button
+              onClick={() => setActiveSection("all")}
+              className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md ${activeSection === "all"
+                ? "text-blue-500 bg-blue-500/10"
+                : "text-muted-foreground hover:bg-muted"
+                }`}
+            >
+              <Layout className="w-4 h-4" />
+              <span>All projects</span>
             </button>
 
             {/* Drafts */}
@@ -1584,18 +1621,7 @@ export function Dashboard({
               )}
             </button>
 
-            {/* All Projects */}
-            <button
-              onClick={() => setActiveSection("all")}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md ${activeSection === "all"
-                ? "text-blue-500 bg-blue-500/10"
-                : "text-muted-foreground hover:bg-muted"
-                }`}
-            >
-              <Layout className="w-4 h-4" />
-              <span>All projects</span>
-            </button>
-
+        
             {/* Trash */}
             <button
               onClick={() => setActiveSection("trash")}
@@ -1931,7 +1957,7 @@ export function Dashboard({
                             onOpenProject(project.id, project.name)
                           } // <-- CRITICAL CHANGE: Pass project.name
                         >
-                         {activeSection === "drafts" || activeSection === "all" ? (
+                           {activeSection === "drafts" || activeSection === "all" || activeSection === "trash" ? (
                             <CardContent className="p-3">
                               <div className="relative h-24 rounded-md overflow-hidden bg-muted mb-3">
                                 <img
@@ -1956,6 +1982,60 @@ export function Dashboard({
                                 >
                                   {getDraftProjectStatus(project.lastModified)}
                                 </Badge>
+
+                                  <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 w-7 p-0"
+                                      onClick={(
+                                        e: React.MouseEvent<HTMLButtonElement>,
+                                      ) => e.stopPropagation()}
+                                    >
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem
+                                      onClick={(
+                                        e: React.MouseEvent<HTMLDivElement>,
+                                      ) => {
+                                        e.stopPropagation();
+                                        handleDuplicateProject(project);
+                                      }}
+                                    >
+                                      <Copy className="mr-2 h-4 w-4" />
+                                      Duplicate
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={(
+                                        e: React.MouseEvent<HTMLDivElement>,
+                                      ) => {
+                                        e.stopPropagation();
+                                        handleMoveProjectToStatus(project.id, "draft");
+                                      }}
+                                    >
+                                      <Folder className="mr-2 h-4 w-4" />
+                                      Move to draft
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={(
+                                        e: React.MouseEvent<HTMLDivElement>,
+                                      ) => {
+                                        e.stopPropagation();
+                                        handleMoveProjectToStatus(project.id, "trash");
+                                      }}
+                                      className="text-red-500"
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Move to trash
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+
+
                               </div>
 
                               <div className="mt-3 space-y-1.5 text-[11px] text-muted-foreground">
