@@ -192,20 +192,18 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
             >
               {state.isLeftSidebarVisible && (
                 <>
-                  <button
-                    onClick={() =>
-                      setState((prev) => ({
-                        ...prev,
-                        isLeftSidebarVisible: false,
-                      }))
-                    }
-                    className="absolute right-2 top-2 z-10 p-1 rounded-md hover:bg-accent text-muted-foreground"
-                    title="Hide Sidebar"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <div className="flex-1 overflow-auto h-full pt-8">
-                    <Sidebar onAddComponent={addComponent} />
+                  <div className="flex-1 overflow-auto h-full">
+                    <Sidebar 
+                      onAddComponent={addComponent} 
+                      onToggle={() => setState(prev => ({ ...prev, isLeftSidebarVisible: false }))}
+                      // ADD THESE NEW PROPS:
+                      components={state.components}
+                      selectedId={state.selectedComponent}
+                      onSelect={selectComponent}
+                      onDelete={deleteComponent}
+                      onReorder={reorderComponent}
+                      onMoveLayer={editor.moveLayer}
+                    />
                   </div>
                 </>
               )}
@@ -408,7 +406,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   {/* Tab Navigation */}
-                  <div className="border-b p-3 shrink-0 pt-10">
+                  <div className="border-b p-3 shrink-0">
                     <div className="grid grid-cols-2 gap-1 bg-muted/30 p-1 rounded-lg">
                       <button
                         onClick={() =>
