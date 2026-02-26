@@ -52,6 +52,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
     deleteComponent,
     selectComponent,
     reorderComponent,
+    moveLayer,
     togglePreview,
     toggleCodeExport,
     toggleTemplates,
@@ -319,6 +320,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                         onUpdateComponent={updateComponent}
                         onDeleteComponent={deleteComponent}
                         onReorderComponent={reorderComponent}
+                        onMoveLayer={moveLayer}
                         canvasZoom={state.canvasZoom}
                         onZoomChange={setCanvasZoom}
                         projectId={state.currentProjectId}

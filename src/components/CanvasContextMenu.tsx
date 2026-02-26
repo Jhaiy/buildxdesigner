@@ -1,6 +1,6 @@
 "use client"
 import React, { useEffect, useRef } from "react"
-import { Copy, Trash2, Layers, ArrowUp, ArrowDown, Link2Off } from "lucide-react"
+import { Copy, Trash2, Layers, ArrowUp, ArrowDown, Link2Off, ChevronUp, ChevronDown } from "lucide-react"
 
 interface ContextMenuPosition {
   x: number
@@ -16,6 +16,8 @@ interface CanvasContextMenuProps {
   onUngroup: () => void
   onBringToFront: () => void
   onSendToBack: () => void
+  onMoveForward: () => void;
+  onMoveBackward: () => void;
   onCopy: () => void
   canGroup: boolean
   canUngroup: boolean
@@ -30,6 +32,8 @@ export function CanvasContextMenu({
   onUngroup,
   onBringToFront,
   onSendToBack,
+  onMoveForward,
+  onMoveBackward,
   onCopy,
   canGroup,
   canUngroup,
@@ -59,19 +63,21 @@ export function CanvasContextMenu({
 
   if (!position) return null
 
-  const menuItems = [
+const menuItems = [
     { label: "Duplicate", icon: Copy, onClick: onDuplicate, divider: false },
     { label: "Copy", icon: Copy, onClick: onCopy, divider: true },
     { label: "Group", icon: Layers, onClick: onGroup, disabled: !canGroup, divider: false },
     { label: "Ungroup", icon: Link2Off, onClick: onUngroup, disabled: !canUngroup, divider: true },
     { label: "Bring to Front", icon: ArrowUp, onClick: onBringToFront, divider: false },
+    { label: "Bring Forward", icon: ChevronUp, onClick: onMoveForward, divider: false },
+    { label: "Send Backward", icon: ChevronDown, onClick: onMoveBackward, divider: false },
     { label: "Send to Back", icon: ArrowDown, onClick: onSendToBack, divider: true },
     { label: "Delete", icon: Trash2, onClick: onDelete, danger: true, divider: false },
   ]
 
   return (
     <div
-      className="fixed z-[9999] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 min-w-[160px]"
+      className="fixed z-9999 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl py-1 min-w-40"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,

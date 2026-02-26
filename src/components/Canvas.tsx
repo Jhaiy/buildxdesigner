@@ -13,7 +13,6 @@ import { setLocalProjectCache } from "../supabase/data/projectService";
 import { MinimalComponentPanel } from "./MinimalComponentPanel";
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import { Plus, Loader2 } from "lucide-react";
-import { createPortal } from 'react-dom';
 
 // Constants
 
@@ -26,7 +25,7 @@ interface CanvasProps {
   onSelectComponent: (component: ComponentData | null) => void;
   onUpdateComponent: (id: string, updates: Partial<ComponentData>) => void;
   onDeleteComponent: (id: string) => void;
-  onReorderComponent: (dragId: string, dropId: string) => void;
+  onReorderComponent: (id: string, direction: 'front' | 'back') => void;
   canvasZoom: number;
   onZoomChange: (zoom: number) => void;
   projectId: string | null;
@@ -40,6 +39,7 @@ interface CanvasProps {
   readOnly?: boolean;
   activePageId?: string;
   pages?: { id: string; name: string; path: string }[];
+  onMoveLayer: (id: string, action: 'forward' | 'backward') => void;
 }
 
 
@@ -73,6 +73,7 @@ export function Canvas({
   readOnly = false,
   activePageId = 'home',
   pages = [{ id: 'home', name: 'Home', path: '/' }],
+  onMoveLayer,
 }: CanvasProps) {
 
   const [draggingComponent, setDraggingComponent] = useState<string | null>(
@@ -103,81 +104,7 @@ export function Canvas({
     gridSize: 20,
     gridColor: "#e5e5e5",
   });
-  const [alignmentGuides, setAlignmentGuides] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
-  const [resizingComponentId, setResizingComponentId] = useState<string | null>(null);
-  const [mousePos, setMousePos] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
-
-  const getComponentRect = useCallback((comp: ComponentData) => {
-    const x = comp.position?.x || 0;
-    const y = comp.position?.y || 0;
-    const width = Number.parseFloat(String(comp.style?.width || "200").replace("px", "")) || 200;
-    const height = Number.parseFloat(String(comp.style?.height || "100").replace("px", "")) || 100;
-    return {
-      left: x,
-      right: x + width,
-      top: y,
-      bottom: y + height,
-      centerX: x + width / 2,
-      centerY: y + height / 2,
-    };
-  }, []);
-
-  const calculateResizeGuides = useCallback((id: string, width: number, height: number) => {
-    const comp = components.find(c => c.id === id);
-    if (!comp) return { x: null, y: null, snappedWidth: width, snappedHeight: height };
-
-    const x = comp.position?.x || 0;
-    const y = comp.position?.y || 0;
-    const right = x + width;
-    const bottom = y + height;
-    const centerX = x + width / 2;
-    const centerY = y + height / 2;
-
-    const newGuides: { x: number | null; y: number | null } = { x: null, y: null };
-    let snappedWidth = width;
-    let snappedHeight = height;
-    const threshold = 5;
-
-    for (const other of components) {
-      if (other.id === id) continue;
-      const otherRect = getComponentRect(other);
-
-      // Check X alignment (right edge or center)
-      const xPoints = [
-        { val: otherRect.left, target: right, type: 'right' },
-        { val: otherRect.right, target: right, type: 'right' },
-        { val: otherRect.centerX, target: centerX, type: 'center' }
-      ];
-
-      for (const point of xPoints) {
-        if (Math.abs(point.val - point.target) < threshold) {
-          newGuides.x = point.val;
-          if (point.type === 'right') snappedWidth = point.val - x;
-          else if (point.type === 'center') snappedWidth = (point.val - x) * 2;
-          break;
-        }
-      }
-
-      // Check Y alignment (bottom edge or center)
-      const yPoints = [
-        { val: otherRect.top, target: bottom, type: 'bottom' },
-        { val: otherRect.bottom, target: bottom, type: 'bottom' },
-        { val: otherRect.centerY, target: centerY, type: 'center' }
-      ];
-
-      for (const point of yPoints) {
-        if (Math.abs(point.val - point.target) < threshold) {
-          newGuides.y = point.val;
-          if (point.type === 'bottom') snappedHeight = point.val - y;
-          else if (point.type === 'center') snappedHeight = (point.val - y) * 2;
-          break;
-        }
-      }
-      if (newGuides.x !== null && newGuides.y !== null) break;
-    }
-
-    return { ...newGuides, snappedWidth, snappedHeight };
-  }, [components, getComponentRect]);
+  const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   useEffect(() => {
     setCanvasProperties((prev) => ({
@@ -268,7 +195,7 @@ export function Canvas({
     if (clipboard) {
       const newComponent = {
         ...clipboard,
-        id: Date.now().toString(),
+        id: generateId(),
         position: {
           x: (clipboard.position?.x || 0) + 20, // Offset slightly from original
           y: (clipboard.position?.y || 0) + 20,
@@ -421,35 +348,19 @@ export function Canvas({
 
   // Bring to Front
   const bringToFront = useCallback(() => {
-    if (!selectedComponent) return;
-
-    const pageComponents = components.filter(
-      (c) => c.page_id === activePageId || c.page_id === "all" || (!c.page_id && activePageId === "home")
-    );
-    
-    const zIndices = pageComponents.map(c => parseInt(String(c.style?.zIndex || "0")));
-    const maxZ = zIndices.length > 0 ? Math.max(...zIndices) : 0;
-    const nextZ = maxZ + 1;
-
-    const previousZIndex = selectedComponent.style?.zIndex;
-    const componentId = selectedComponent.id;
-    const currentStyle = { ...selectedComponent.style };
+    if (!selectedComponent || !onReorderComponent) return;
 
     const execute = () => {
-      onUpdateComponent(componentId, {
-        style: { ...currentStyle, zIndex: nextZ }
-      });
+      onReorderComponent(selectedComponent.id, "front");
     };
 
     const undo = () => {
-      onUpdateComponent(componentId, {
-        style: { ...currentStyle, zIndex: previousZIndex }
-      });
+      // Undo not implemented for Z-index yet
     };
 
     addToHistory({ execute, undo });
     execute();
-    }, [selectedComponent, onUpdateComponent, addToHistory, activePageId]);
+  }, [selectedComponent, onReorderComponent, addToHistory]);
 
   // Send to Back
   const sendToBack = useCallback(() => {
@@ -630,6 +541,7 @@ export function Canvas({
       } else {
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(components));
       }
+      console.log("Components saved to localStorage:", components);
     } catch (error) {
       console.error("Error saving components to localStorage:", error);
     }
@@ -702,17 +614,11 @@ export function Canvas({
         const scrollTop = canvasRef.current.scrollTop;
 
         // Calculate the actual position in the canvas coordinate system
-        let x = (offset.x - canvasRect.left + scrollLeft) / scale;
-        let y = (offset.y - canvasRect.top + scrollTop) / scale;
-
-        // Snap to grid if enabled
-        if (canvasProperties.showGrid) {
-          x = Math.round(x / canvasProperties.gridSize) * canvasProperties.gridSize;
-          y = Math.round(y / canvasProperties.gridSize) * canvasProperties.gridSize;
-        }
+        const x = (offset.x - canvasRect.left + scrollLeft) / scale;
+        const y = (offset.y - canvasRect.top + scrollTop) / scale;
 
         const newComponent: ComponentData = {
-          id: Date.now().toString(),
+          id: generateId(),
           type: item.type,
           props: item.props,
           style: item.style || {},
@@ -835,6 +741,7 @@ export function Canvas({
       readOnly ||
       target.closest(".resize-handle") ||
       target.closest('[contenteditable="true"]') ||
+      target.closest("button") ||
       target.closest("input") ||
       target.closest("textarea")
     ) {
@@ -868,6 +775,7 @@ export function Canvas({
     if (
       target.closest(".resize-handle") ||
       target.closest('[contenteditable="true"]') ||
+      target.closest("button") ||
       target.closest("input") ||
       target.closest("textarea")
     ) {
@@ -930,83 +838,19 @@ export function Canvas({
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
-      let x =
+      const x =
         (touch.clientX - canvasRect.left + scrollLeft) / scale - dragOffset.x;
-      let y =
+      const y =
         (touch.clientY - canvasRect.top + scrollTop) / scale - dragOffset.y;
 
-      // Smart Guides Logic
-      let snappedX = x;
-      let snappedY = y;
-      const newGuides: { x: number | null; y: number | null } = { x: null, y: null };
-      const threshold = 5;
-
-      const draggingComp = components.find(c => c.id === draggingComponent);
-      if (draggingComp) {
-        const width = Number.parseFloat(String(draggingComp.style?.width || "200").replace("px", "")) || 200;
-        const height = Number.parseFloat(String(draggingComp.style?.height || "100").replace("px", "")) || 100;
-
-        for (const other of components) {
-          if (other.id === draggingComponent) continue;
-          const otherRect = getComponentRect(other);
-          
-          if (newGuides.x === null) {
-            const xPoints = [
-              { val: otherRect.left, target: x },
-              { val: otherRect.right, target: x + width },
-              { val: otherRect.centerX, target: x + width / 2 },
-              { val: otherRect.left, target: x + width },
-              { val: otherRect.right, target: x }
-            ];
-            for (const point of xPoints) {
-              if (Math.abs(point.val - point.target) < threshold) {
-                newGuides.x = point.val;
-                if (point.target === x) snappedX = point.val;
-                else if (point.target === x + width) snappedX = point.val - width;
-                else if (point.target === x + width / 2) snappedX = point.val - width / 2;
-                break;
-              }
-            }
-          }
-
-          if (newGuides.y === null) {
-            const yPoints = [
-              { val: otherRect.top, target: y },
-              { val: otherRect.bottom, target: y + height },
-              { val: otherRect.centerY, target: y + height / 2 },
-              { val: otherRect.top, target: y + height },
-              { val: otherRect.bottom, target: y }
-            ];
-            for (const point of yPoints) {
-              if (Math.abs(point.val - point.target) < threshold) {
-                newGuides.y = point.val;
-                if (point.target === y) snappedY = point.val;
-                else if (point.target === y + height) snappedY = point.val - height;
-                else if (point.target === y + height / 2) snappedY = point.val - height / 2;
-                break;
-              }
-            }
-          }
-          if (newGuides.x !== null && newGuides.y !== null) break;
-        }
-      }
-
-      if (canvasProperties.showGrid) {
-        if (newGuides.x === null) snappedX = Math.round(snappedX / canvasProperties.gridSize) * canvasProperties.gridSize;
-        if (newGuides.y === null) snappedY = Math.round(snappedY / canvasProperties.gridSize) * canvasProperties.gridSize;
-      }
-
-      setAlignmentGuides(newGuides);
       updateComponentWithHistory(draggingComponent, {
-        position: { x: snappedX, y: snappedY },
+        position: { x, y },
       });
     }
   };
 
   const handleTouchEnd = () => {
     setDraggingComponent(null);
-    setAlignmentGuides({ x: null, y: null });
-    setMousePos({ x: null, y: null });
   };
 
   const handleMouseMove = (e: MouseEvent) => {
@@ -1016,123 +860,19 @@ export function Canvas({
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
-      let x =
+      const x =
         (e.clientX - canvasRect.left + scrollLeft) / scale - dragOffset.x;
-      let y = (e.clientY - canvasRect.top + scrollTop) / scale - dragOffset.y;
-      setMousePos({ x: x + dragOffset.x, y: y + dragOffset.y });
+      const y = (e.clientY - canvasRect.top + scrollTop) / scale - dragOffset.y;
 
-      // Smart Guides Logic
-      let snappedX = x;
-      let snappedY = y;
-      const newGuides: { x: number | null; y: number | null } = { x: null, y: null };
-      const threshold = 5;
-
-      const draggingComp = components.find(c => c.id === draggingComponent);
-      if (draggingComp) {
-        const width = Number.parseFloat(String(draggingComp.style?.width || "200").replace("px", "")) || 200;
-        const height = Number.parseFloat(String(draggingComp.style?.height || "100").replace("px", "")) || 100;
-
-        for (const other of components) {
-          if (other.id === draggingComponent) continue;
-          const otherRect = getComponentRect(other);
-          
-          if (newGuides.x === null) {
-            const xPoints = [
-              { val: otherRect.left, target: x },
-              { val: otherRect.right, target: x + width },
-              { val: otherRect.centerX, target: x + width / 2 },
-              { val: otherRect.left, target: x + width },
-              { val: otherRect.right, target: x }
-            ];
-            for (const point of xPoints) {
-              if (Math.abs(point.val - point.target) < threshold) {
-                newGuides.x = point.val;
-                if (point.target === x) snappedX = point.val;
-                else if (point.target === x + width) snappedX = point.val - width;
-                else if (point.target === x + width / 2) snappedX = point.val - width / 2;
-                break;
-              }
-            }
-          }
-
-          if (newGuides.y === null) {
-            const yPoints = [
-              { val: otherRect.top, target: y },
-              { val: otherRect.bottom, target: y + height },
-              { val: otherRect.centerY, target: y + height / 2 },
-              { val: otherRect.top, target: y + height },
-              { val: otherRect.bottom, target: y }
-            ];
-            for (const point of yPoints) {
-              if (Math.abs(point.val - point.target) < threshold) {
-                newGuides.y = point.val;
-                if (point.target === y) snappedY = point.val;
-                else if (point.target === y + height) snappedY = point.val - height;
-                else if (point.target === y + height / 2) snappedY = point.val - height / 2;
-                break;
-              }
-            }
-          }
-          if (newGuides.x !== null && newGuides.y !== null) break;
-        }
-      }
-
-      if (canvasProperties.showGrid) {
-        if (newGuides.x === null) snappedX = Math.round(snappedX / canvasProperties.gridSize) * canvasProperties.gridSize;
-        if (newGuides.y === null) snappedY = Math.round(snappedY / canvasProperties.gridSize) * canvasProperties.gridSize;
-      }
-
-      setAlignmentGuides(newGuides);
       updateComponentWithHistory(draggingComponent, {
-        position: { x: snappedX, y: snappedY },
+        position: { x, y },
       });
     }
   };
 
   const handleMouseUp = () => {
     setDraggingComponent(null);
-    setAlignmentGuides({ x: null, y: null });
-    setMousePos({ x: null, y: null });
   };
-
-  React.useEffect(() => {
-    if (resizingComponentId) {
-      const handleGlobalMouseMove = (e: MouseEvent) => {
-        if (canvasRef.current) {
-          const rect = canvasRef.current.getBoundingClientRect();
-          const scale = canvasZoom / 100;
-          const x = (e.clientX - rect.left + canvasRef.current.scrollLeft) / scale;
-          const y = (e.clientY - rect.top + canvasRef.current.scrollTop) / scale;
-          setMousePos({ x, y });
-        }
-      };
-      document.addEventListener("mousemove", handleGlobalMouseMove);
-      return () => document.removeEventListener("mousemove", handleGlobalMouseMove);
-    }
-  }, [resizingComponentId, canvasZoom]);
-
-  const handleUpdateComponentWithGuides = useCallback((id: string, updates: Partial<ComponentData>) => {
-    let finalUpdates = updates;
-    
-    if (resizingComponentId === id && updates.style) {
-      const width = parseFloat(String(updates.style.width || "0").replace("px", ""));
-      const height = parseFloat(String(updates.style.height || "0").replace("px", ""));
-      
-      if (width > 0 || height > 0) {
-        const guides = calculateResizeGuides(id, width, height);
-        setAlignmentGuides({ x: guides.x, y: guides.y });
-        finalUpdates = {
-          ...updates,
-          style: {
-            ...updates.style,
-            width: `${guides.snappedWidth}px`,
-            height: `${guides.snappedHeight}px`
-          }
-        };
-      }
-    }
-    onUpdateComponent(id, finalUpdates);
-  }, [resizingComponentId, calculateResizeGuides, onUpdateComponent]);
 
   React.useEffect(() => {
     if (draggingComponent) {
@@ -1343,303 +1083,188 @@ export function Canvas({
         )}
 
 
-{/* Infinite Canvas Content */}
-
+        {/* Infinite Canvas Content */}
         {(() => {
-
-          const activeColor = "#a855f7";
-
+          const activeColor = "#a855f7"; // Reusing the purple primary color
           const filteredComponents = components.filter(c =>
-
             c.page_id === activePageId ||
-
             c.page_id === 'all' ||
-
             (!c.page_id && activePageId === 'home')
-
           );
 
-
-
           return (
-
             <div
-
               ref={contentRef}
-
               className="relative"
-
               style={{
-
                 transform: `scale(${canvasZoom / 100})`,
-
                 transformOrigin: "top left",
-
                 minWidth: "300vw",
-
                 minHeight: "300vh",
-
                 width: "300vw",
-
                 height: "300vh",
-
                 ...canvasStyle,
-
               }}
-
             >
-
               {filteredComponents.length === 0 ? (
-
-                <div className="absolute inset-0 pointer-events-none z-10">
-
-                   <div className="text-center animate-in fade-in zoom-in duration-500">
-
+                <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
+                  <div className="text-center animate-in fade-in zoom-in duration-500">
                     <div
-
                       className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary/10 flex items-center justify-center"
-
                       style={{
-
                         background: `linear-gradient(135deg, ${activeColor}20, ${activeColor}10)`,
-
                       }}
-
                     >
-
                       <Plus
-
                         className="w-10 h-10"
-
                         style={{ color: activeColor }}
-
                       />
-
                     </div>
-
                     <div>
-
                       <p className="mb-2">Drop components here to start building</p>
-
                       <p className="text-xs text-muted-foreground">
-
                         Desktop: Drag & drop components, then drag to move them
-
                         anywhere
-
                       </p>
-
                       <div className="hidden lg:block mt-4 text-xs">
-
                         <p>Keyboard shortcuts:</p>
-
                         <div className="flex flex-wrap gap-2 justify-center mt-2">
-
                           <span className="bg-muted px-2 py-1 rounded">
-
                             Ctrl+Wheel - Zoom
-
                           </span>
-
                           <span className="bg-muted px-2 py-1 rounded">
-
                             Del - Delete
-
                           </span>
-
                           <span className="bg-muted px-2 py-1 rounded">
-
                             Esc - Deselect
-
                           </span>
-
                           <span className="bg-muted px-2 py-1 rounded">
-
                             Drag - Move
-
                           </span>
-
                         </div>
-
                       </div>
-
                     </div>
-
                   </div>
-
                 </div>
-
               ) : (
-
                 <>
-
                   {filteredComponents.map((component) => {
-
                     const position = component.position || { x: 100, y: 100 };
-
                     const isSelected = selectedComponents.has(component.id);
-
                     const isDragging = draggingComponent === component.id;
 
-
-
                     return (
-
                       <div
-
                         key={component.id}
-
                         data-component-id={component.id}
-
                         className={`absolute transition-shadow duration-200 ${
-
                           isSelected
-
-                            ? "ring-2 ring-primary ring-offset-4 rounded component-selected shadow-2xl z-20"
-
-                            : readOnly ? "z-10" : "hover:ring-2 hover:ring-primary/30 hover:ring-offset-2 rounded hover:shadow-lg z-10"
-
+                            ? "z-50 ring-2 ring-primary shadow-2xl" // Always on very top when selected
+                            : isDragging
+                              ? "z-40" // On top while moving
+                              : "z-auto" // <--- IMPORTANT: Natural order for everyone else
                         } ${isDragging ? "cursor-grabbing" : readOnly ? "cursor-default" : "cursor-grab"}`}
-
                         style={{
-
                           left: `${position.x}px`,
-
                           top: `${position.y}px`,
-
                           width: "fit-content",
-
                           height: "fit-content",
-
                           pointerEvents: "auto",
-
                         }}
-
                         onMouseDown={!readOnly ? (e) => handleComponentMouseDown(e, component) : undefined}
-
                         onTouchStart={!readOnly ? (e) => handleComponentTouchStart(e, component) : undefined}
-
                         onClick={!readOnly ? (e) => {
-
                           e.stopPropagation();
 
                           if (e.ctrlKey || e.metaKey) {
-
+                            // Multi-select with Ctrl/Cmd key
                             const newSelection = new Set(selectedComponents);
-
-                            if (newSelection.has(component.id)) newSelection.delete(component.id);
-
-                            else newSelection.add(component.id);
-
+                            if (newSelection.has(component.id)) {
+                              newSelection.delete(component.id);
+                            } else {
+                              newSelection.add(component.id);
+                            }
                             setSelectedComponents(newSelection);
-
                           } else {
-
+                            // Single select
                             setSelectedComponents(new Set([component.id]));
-
                           }
-
                           onSelectComponent(component);
-
                         } : undefined}
-
-                        onContextMenu={!readOnly ? (e) => handleComponentContextMenu(e, component) : undefined}
-
+                        onContextMenu={!readOnly ? (e) => {
+                          handleComponentContextMenu(e, component);
+                        } : undefined}
                         onDoubleClick={!readOnly ? (e) => handleComponentDoubleClick(component, e) : undefined}
-
                       >
-
                         <RenderableComponent
-
                           component={component}
-
                           isSelected={readOnly ? false : isSelected}
-
                           onUpdate={!readOnly ? (updates) => onUpdateComponent(component.id, updates) : () => { }}
-
                           onDelete={!readOnly ? () => onDeleteComponent(component.id) : () => { }}
 
                           editingComponentId={readOnly ? null : editingTextId}
-
                           onEditComponent={setEditingTextId}
-
                           userProjectConfig={userProjectConfig}
-
                           isPreview={readOnly}
-
-                          onContextMenu={!readOnly ? (e) => handleComponentContextMenu(e, component) : undefined} 
-
                         />
 
+                        {/* Desktop Selection Indicator - Hide in Read Only */}
+                        {!readOnly && isSelected && (
+
+                          <div className="hidden lg:block absolute -top-8 left-0 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full shadow-lg font-medium z-30 pointer-events-none">
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                              {component.type.charAt(0).toUpperCase() +
+                                component.type.slice(1)}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Position Indicator - Hide in Read Only */}
+                        {!readOnly && isSelected && (
+
+                          <div className="hidden lg:block absolute -bottom-8 left-0 bg-muted text-muted-foreground text-xs px-2 py-1 rounded shadow-md font-mono z-30 pointer-events-none">
+                            x: {Math.round(position.x)} y: {Math.round(position.y)}
+                          </div>
+                        )}
+
+                        {/* Mobile Selection Indicator - Hide in Read Only */}
+                        {!readOnly && isSelected && (
+
+                          <div className="lg:hidden absolute -top-6 left-0 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full shadow-md font-medium z-30 pointer-events-none">
+                            {component.type}
+                          </div>
+                        )}
                       </div>
-
                     );
-
                   })}
-
                 </>
-
               )}
-
-
-
-              {/* RENDER ALIGNMENT GUIDES HERE */}
-
-              {alignmentGuides.x !== null && (
-
-                <div 
-
-                  className="absolute border-l border-primary z-50 pointer-events-none"
-
-                  style={{ left: alignmentGuides.x, top: 0, bottom: '300vh', width: '1px' }}
-
-                />
-
-              )}
-
-              {alignmentGuides.y !== null && (
-
-                <div 
-
-                  className="absolute border-t border-primary z-50 pointer-events-none"
-
-                  style={{ top: alignmentGuides.y, left: 0, right: '300vw', height: '1px' }}
-
-                />
-
-              )}
-
             </div>
-
           );
-
         })()}
-
       </div>
 
-
-
       {/* Canvas Context Menu - Hide in Read Only */}
+      {!readOnly && (
+        <CanvasContextMenu
 
-{!readOnly && createPortal(
-  <CanvasContextMenu
-    position={contextMenu}
-    onClose={() => setContextMenu(null)}
-    onDuplicate={handleDuplicate}
-    onDelete={handleDelete}
-    onGroup={groupSelectedComponents}
-    onUngroup={ungroupSelected}
-    onBringToFront={bringToFront}
-    onSendToBack={sendToBack}
-    onCopy={() => copyToClipboard()}
-    canGroup={selectedComponents.size > 1}
-    canUngroup={selectedComponent?.type === "group"}
-  />,
-  document.body
-)}
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onDuplicate={handleDuplicate}
+          onDelete={handleDelete}
+          onGroup={groupSelectedComponents}
+          onUngroup={ungroupSelected}
+          onBringToFront={bringToFront}
+          onSendToBack={sendToBack}
+          onMoveForward={() => selectedComponent && onMoveLayer(selectedComponent.id, 'forward')}
+          onMoveBackward={() => selectedComponent && onMoveLayer(selectedComponent.id, 'backward')}
+          onCopy={() => copyToClipboard()}
+          canGroup={selectedComponents.size > 1}
+          canUngroup={selectedComponent?.type === "group"}
+        />
+      )}
 
     </div>
-
   );
-
 }

@@ -124,7 +124,7 @@ export function useEditorState() {
     updateComponent,
     deleteComponent,
     selectComponent,
-    reorderComponent,
+    reorderComponent: collaborationReorder,
     clearCanvas,
     remoteCursors,
   } = useCollaboration({
@@ -1038,6 +1038,70 @@ export function useEditorState() {
     }));
   };
 
+// src/hooks/useEditorState.ts
+
+const handleReorderComponent = (id: string, target: 'front' | 'back' | string) => {
+  // 1. Calculate the new order using the CURRENT state
+  const currentComponents = [...state.components];
+  const index = currentComponents.findIndex((c) => c.id === id);
+  
+  if (index === -1) return;
+
+  const [movedItem] = currentComponents.splice(index, 1);
+
+  if (target === 'front') {
+    currentComponents.push(movedItem);
+  } else if (target === 'back') {
+    currentComponents.unshift(movedItem);
+  } else {
+    const dropIndex = currentComponents.findIndex(c => c.id === target);
+    currentComponents.splice(dropIndex, 0, movedItem);
+  }
+
+  // 2. Update the local React state
+  setState((prev) => ({
+    ...prev,
+    components: currentComponents,
+    hasUnsavedChanges: true,
+  }));
+
+  // 3. Update the collaboration "truth" (Yjs/Supabase)
+  // This ensures the move is permanent and won't be overwritten by a sync pulse
+  replaceComponents(currentComponents);
+};
+
+// src/hooks/useEditorState.ts
+
+const handleMoveLayer = (id: string, action: 'forward' | 'backward') => {
+  const currentComponents = [...state.components];
+  const index = currentComponents.findIndex((c) => c.id === id);
+
+  if (index === -1) return;
+
+  // Bring Forward: Swap with the item to the right (higher index)
+  if (action === 'forward' && index < currentComponents.length - 1) {
+    [currentComponents[index], currentComponents[index + 1]] = 
+    [currentComponents[index + 1], currentComponents[index]];
+  } 
+  // Send Backward: Swap with the item to the left (lower index)
+  else if (action === 'backward' && index > 0) {
+    [currentComponents[index], currentComponents[index - 1]] = 
+    [currentComponents[index - 1], currentComponents[index]];
+  } else {
+    return; // Boundary reached, do nothing
+  }
+
+  // Update local state
+  setState((prev) => ({
+    ...prev,
+    components: currentComponents,
+    hasUnsavedChanges: true,
+  }));
+
+  // Sync with collaboration service/Supabase
+  replaceComponents(currentComponents);
+};
+
   // ==================== RETURN ====================
 
   return {
@@ -1056,7 +1120,8 @@ export function useEditorState() {
     updateComponent,
     deleteComponent,
     selectComponent,
-    reorderComponent,
+    reorderComponent: handleReorderComponent,
+    moveLayer: handleMoveLayer,
     clearCanvas,
 
     // Toggles
