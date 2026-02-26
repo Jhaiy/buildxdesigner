@@ -40,7 +40,7 @@ import { formatUrl } from '../utils/urlUtils';
 
 
 type ActionType = 'onClick' | 'onHover' | 'onFocus' | 'onBlur';
-type ActionHandlerType = 'custom' | 'navigate' | 'scroll' | 'copy' | 'toggle' | 'supabase';
+type ActionHandlerType = 'custom' | 'navigate' | 'scroll' | 'copy' | 'toggle' | 'supabase' | 'condition';
 
 interface Action {
   id: string;
@@ -57,6 +57,17 @@ interface Action {
   supabaseUrl?: string;
   supabaseKey?: string;
   supabaseData?: Record<string, string>;
+  supabaseFilters?: { column: string; operator: string; value: string }[];
+  supabaseSelectColumns?: string;
+  onSuccessActionId?: string;
+  onErrorActionId?: string;
+  onSuccessUrl?: string;
+  onErrorUrl?: string;
+
+  // For conditional logic
+  conditionCode?: string;
+  trueActionId?: string;
+  falseActionId?: string;
 }
 
 interface CardProps {
@@ -240,16 +251,59 @@ export function RenderableComponent({
           }
 
           const tableName = props.supabaseTable.replace(/^public\./, '');
-          const { data, error } = await client
-            .from(tableName)
-            .select('*')
-            .order('created_at', { ascending });
+
+          const buildQuery = (): any => {
+            let query: any = client.from(tableName).select(props.supabaseSelectColumns || '*');
+
+            if (props.supabaseFilters && props.supabaseFilters.length > 0) {
+              props.supabaseFilters.forEach((filter: any) => {
+                if (!filter.column || !filter.value) return;
+
+                let filterValue = filter.value;
+
+                // Allow reference by element ID
+                if (filterValue.startsWith('#')) {
+                  const cleanId = filterValue.substring(1);
+                  const refElement = document.getElementById(cleanId) as any;
+                  if (refElement) {
+                    if (refElement.tagName === 'INPUT' || refElement.tagName === 'SELECT' || refElement.tagName === 'TEXTAREA') {
+                      filterValue = refElement.value;
+                    } else {
+                      filterValue = refElement.innerText;
+                    }
+                  }
+                } else if (filterValue.startsWith('{') && filterValue.endsWith('}')) {
+                  // Allow resolving JS globals/expressions
+                  try {
+                    const expression = filterValue.substring(1, filterValue.length - 1);
+                    const result = new Function(`return ${expression}`)();
+                    filterValue = result;
+                  } catch (e) {
+                    console.warn(`Failed to resolve JS filter value: ${filterValue}`, e);
+                  }
+                }
+
+                switch (filter.operator) {
+                  case 'eq': query = query.eq(filter.column, filterValue); break;
+                  case 'neq': query = query.neq(filter.column, filterValue); break;
+                  case 'gt': query = query.gt(filter.column, filterValue); break;
+                  case 'gte': query = query.gte(filter.column, filterValue); break;
+                  case 'lt': query = query.lt(filter.column, filterValue); break;
+                  case 'lte': query = query.lte(filter.column, filterValue); break;
+                  case 'like': query = query.like(filter.column, filterValue); break;
+                  case 'ilike': query = query.ilike(filter.column, filterValue); break;
+                  default: query = query.eq(filter.column, filterValue); break;
+                }
+              });
+            }
+            return query;
+          };
+
+          const { data, error } = await buildQuery().order('created_at', { ascending });
 
           if (error) {
             console.warn("Error with ordered fetch, retrying without order:", error.message);
-            const { data: retryData, error: retryError } = await client
-              .from(tableName)
-              .select('*');
+            const { data: retryData, error: retryError } = await buildQuery();
             if (!retryError) handleData(retryData);
           } else {
             handleData(data);
@@ -270,7 +324,7 @@ export function RenderableComponent({
       window.addEventListener('supabase-data-update' as any, handleRefresh);
       return () => window.removeEventListener('supabase-data-update' as any, handleRefresh);
     }
-  }, [type, props.supabaseTable, props.fetchOrder, userProjectConfig]);
+  }, [type, props.supabaseTable, props.fetchOrder, props.supabaseFilters, props.supabaseSelectColumns, userProjectConfig]);
 
   React.useEffect(() => {
     // ONLY initialize DataTables in PREVIEW mode to avoid errors during editing in the canvas
@@ -388,7 +442,7 @@ export function RenderableComponent({
     return defaultValue;
   };
 
-  const executeActions = (actions: Action[], event: React.SyntheticEvent) => {
+  const executeActions = async (actions: Action[], event: React.SyntheticEvent) => {
     const componentProps = component.props || {};
     console.log('executeActions called with actions:', actions);
     console.log('isPreview:', isPreview);
@@ -404,6 +458,7 @@ export function RenderableComponent({
       }
 
       // Check for scroll actions first
+      // Keep synchronous scroll interception as an edge case optimization
       const scrollAction = actions.find(action => action.handlerType === 'scroll' && action.selector);
       if (scrollAction && scrollAction.selector) {
         // Remove any leading # from the selector
@@ -419,11 +474,12 @@ export function RenderableComponent({
         return; // Don't process other actions if we found a scroll action
       }
 
-      actions.forEach((action: Action) => {
+      // Helper function to allow recursive action chaining
+      const executeSingleAction = async (action: Action): Promise<void> => {
+        if (!action) return;
         console.log('Processing action:', action);
 
-        // Execute the handler based on its type
-        const executeHandler = () => {
+        const executeHandler = async () => {
           try {
             // Handle scroll action specifically
             if (action.handlerType === 'scroll' && action.selector) {
@@ -621,91 +677,163 @@ export function RenderableComponent({
                   console.log(`[Supabase] Executing ${operation} on table "${table}"`);
                   console.log(`[Supabase] Payload:`, recordData);
 
-                  let client = supabase;
-                  if (action.supabaseUrl && action.supabaseKey) {
-                    console.log('Using custom Supabase client from action config:', action.supabaseUrl);
-                    client = createClient(action.supabaseUrl, action.supabaseKey);
-                  } else if (userProjectConfig?.supabaseUrl && userProjectConfig?.supabaseKey) {
-                    console.log('Using global user project config for Supabase');
-                    client = createClient(userProjectConfig.supabaseUrl, userProjectConfig.supabaseKey);
-                  } else {
-                    console.log('Using default Supabase client');
-                  }
+                  const executeSupabaseOperation = async () => {
+                    let client = supabase;
+                    if (action.supabaseUrl && action.supabaseKey) {
+                      console.log('Using custom Supabase client from action config:', action.supabaseUrl);
+                      client = createClient(action.supabaseUrl, action.supabaseKey);
+                    } else if (userProjectConfig?.supabaseUrl && userProjectConfig?.supabaseKey) {
+                      console.log('Using global user project config for Supabase');
+                      client = createClient(userProjectConfig.supabaseUrl, userProjectConfig.supabaseKey);
+                    } else {
+                      console.log('Using default Supabase client');
+                    }
 
-                  let result;
+                    let query: any = client.from(table);
 
-                  if (operation === 'insert') {
-                    result = await client.from(table).insert(recordData);
-                  } else if (operation === 'select') {
-                    let query = client.from(table).select('*');
+                    if (operation === 'insert') {
+                      query = query.insert(recordData).select();
+                    } else if (operation === 'select') {
+                      query = query.select(action.supabaseSelectColumns || '*');
 
-                    Object.entries(recordData).forEach(([key, value]) => {
-                      if (value) {
-                        query = query.eq(key, value);
+                      // Filter by legacy recordData mappings for Select
+                      Object.entries(recordData).forEach(([key, value]) => {
+                        if (value) {
+                          query = query.eq(key, value);
+                        }
+                      });
+                    } else if (operation === 'update') {
+                      // if NO raw filters are populated, we expect the legacy "id" pattern
+                      if (!action.supabaseFilters || action.supabaseFilters.length === 0) {
+                        if (recordData.id) {
+                          const { id, ...updateData } = recordData;
+                          query = query.update(updateData).eq('id', id).select();
+                        } else {
+                          throw new Error('Update requires an "id" column in the data mapping or explicit filters.');
+                        }
+                      } else {
+                        query = query.update(recordData).select();
                       }
-                    });
+                    } else if (operation === 'delete') {
+                      if (!action.supabaseFilters || action.supabaseFilters.length === 0) {
+                        if (recordData.id) {
+                          query = query.delete().eq('id', recordData.id).select();
+                        } else {
+                          throw new Error('Delete requires an "id" column in the data mapping or explicit filters.');
+                        }
+                      } else {
+                        query = query.delete().select();
+                      }
+                    }
 
-                    result = await query;
-                    console.log('Supabase Select Result:', result.data);
+                    // Apply advanced filters (for select, update, delete)
+                    if (operation !== 'insert' && action.supabaseFilters && action.supabaseFilters.length > 0) {
+                      action.supabaseFilters.forEach(filter => {
+                        if (!filter.column || !filter.value) return;
 
-                    if (result.data) {
-                      toast.success('Select Query Successful', {
-                        description: `Found ${result.data.length} records.`
+                        // Check if value is dynamic element reference
+                        let filterValue = filter.value;
+                        const cleanId = filterValue.startsWith('#') ? filterValue.substring(1) : filterValue;
+                        const refElement = document.getElementById(cleanId) as any;
+                        if (refElement && 'value' in refElement) {
+                          filterValue = refElement.value;
+                        } else if (refElement) {
+                          filterValue = refElement.innerText;
+                        }
+
+                        switch (filter.operator) {
+                          case 'eq': query = query.eq(filter.column, filterValue); break;
+                          case 'neq': query = query.neq(filter.column, filterValue); break;
+                          case 'gt': query = query.gt(filter.column, filterValue); break;
+                          case 'gte': query = query.gte(filter.column, filterValue); break;
+                          case 'lt': query = query.lt(filter.column, filterValue); break;
+                          case 'lte': query = query.lte(filter.column, filterValue); break;
+                          case 'like': query = query.like(filter.column, filterValue); break;
+                          case 'ilike': query = query.ilike(filter.column, filterValue); break;
+                          default: query = query.eq(filter.column, filterValue); break;
+                        }
                       });
                     }
-                  } else if (operation === 'update') {
-                    if (recordData.id) {
-                      const { id, ...updateData } = recordData;
-                      result = await client.from(table).update(updateData).eq('id', id);
-                    } else {
-                      console.warn('Update operation requires an "id" column in the data mapping');
-                      toast.error('Update Failed', {
-                        description: 'Update requires an "id" column in the data mapping'
-                      });
-                      return;
-                    }
-                  } else if (operation === 'delete') {
-                    if (recordData.id) {
-                      result = await client.from(table).delete().eq('id', recordData.id);
-                    } else {
-                      console.warn('Delete operation requires an "id" column in the data mapping');
-                      toast.error('Delete Failed', {
-                        description: 'Delete requires an "id" column in the data mapping'
-                      });
-                      return;
-                    }
-                  }
 
-                  if (result && result.error) {
-                    console.error("Supabase Operation Error:", result.error);
-                    toast.error('Supabase Operation Failed', {
-                      description: result.error.message
-                    });
-                  } else if (result) {
-                    console.log("Supabase Operation Success:", result);
-                    toast.success('Action Completed', {
-                      description: `${operation.charAt(0).toUpperCase() + operation.slice(1)} operation completed successfully`
-                    });
+                    const result = await query;
 
-                    if (operation === 'insert' || operation === 'update' || operation === 'delete') {
-                      window.dispatchEvent(new CustomEvent('supabase-data-update', {
-                        detail: { table, operation }
-                      }));
+                    if (operation === 'select') {
+                      console.log('Supabase Select Result:', result.data);
+
+                      // Expose results globally for condition scripts
+                      (window as any).supabaseData = result.data;
+
+                      if (result.data) {
+                        toast.success('Select Query Successful', {
+                          description: `Found ${result.data.length} records.`
+                        });
+                      }
                     }
-                  }
-                } catch (err) {
+
+                    if (result && result.error) throw result.error;
+
+                    if (result) {
+                      console.log("Supabase Operation Success:", result);
+                      toast.success('Action Completed', {
+                        description: `${operation.charAt(0).toUpperCase() + operation.slice(1)} operation completed successfully`
+                      });
+
+                      if (operation === 'insert' || operation === 'update' || operation === 'delete') {
+                        window.dispatchEvent(new CustomEvent('supabase-data-update', {
+                          detail: { table, operation }
+                        }));
+                      }
+                    }
+                  };
+
+                  await executeSupabaseOperation();
+                  return true;
+                } catch (err: any) {
                   console.error("Supabase Exception:", err);
                   toast.error('Unexpected Error', {
-                    description: 'An unexpected error occurred. Check console for details.'
+                    description: err.message || 'An unexpected error occurred. Check console for details.'
                   });
+                  return false;
                 }
               })();
 
+              // Await result. Wait for standard flow.
               return true;
             }
 
+            // Handle Condition Actions
+            if (action.handlerType === 'condition' && action.conditionCode) {
+              console.log('Evaluating Condition Action...');
+              try {
+                const conditionFn = new Function('event', 'props', `
+                     try {
+                        ${action.conditionCode}
+                     } catch (err) {
+                        console.error('Condition Evaluation Error:', err);
+                        return false;
+                     }
+                  `);
+
+                const isTrue = conditionFn(event, componentProps);
+                console.log(`Condition Evaluated: ${isTrue}`);
+
+                if (isTrue && action.trueActionId && action.trueActionId !== 'none') {
+                  const trueAction = actions.find(a => a.id === action.trueActionId);
+                  if (trueAction) await executeSingleAction(trueAction);
+                } else if (!isTrue && action.falseActionId && action.falseActionId !== 'none') {
+                  const falseAction = actions.find(a => a.id === action.falseActionId);
+                  if (falseAction) await executeSingleAction(falseAction);
+                }
+                return true;
+              } catch (err: any) {
+                console.error('Error in condition logic block', err);
+                toast.error("Condition Check Failed", { description: err.message });
+                return false;
+              }
+            }
+
             // For other action types, execute the generated handler
-            if (action.handler && action.handlerType !== 'supabase') {
+            if (action.handler && action.handlerType !== 'supabase' && action.handlerType !== 'condition') {
               console.log('Executing custom handler:', action.handlerType);
               try {
                 // Execute the handler directly since it's already JavaScript code
@@ -742,19 +870,54 @@ export function RenderableComponent({
           }
         };
 
-        // Execute the handler
-        if (action.type === 'onClick') {
-          // For click events, prevent default behavior
-          if (event && 'preventDefault' in event) {
-            event.stopPropagation();
+        // Execute the handler and process chaining
+        try {
+          const success = await executeHandler();
+          if (success) {
+            if (action.onSuccessUrl && action.onSuccessUrl !== 'none') {
+              console.log('Chaining success navigation to:', action.onSuccessUrl);
+              if (navigate) navigate(action.onSuccessUrl);
+            } else if (action.onSuccessActionId && action.onSuccessActionId !== 'none') {
+              console.log(`Action success, triggering chain: ${action.onSuccessActionId}`);
+              const nextAction = actions.find(a => a.id === action.onSuccessActionId);
+              if (nextAction && nextAction.id !== action.id) {
+                await executeSingleAction(nextAction);
+              }
+            }
+          } else {
+            if (action.onErrorUrl && action.onErrorUrl !== 'none') {
+              console.log('Chaining error navigation to:', action.onErrorUrl);
+              if (navigate) navigate(action.onErrorUrl);
+            } else if (action.onErrorActionId && action.onErrorActionId !== 'none') {
+              const errAction = actions.find(a => a.id === action.onErrorActionId);
+              if (errAction && errAction.id !== action.id) {
+                await executeSingleAction(errAction);
+              }
+            }
           }
-
-          // Execute immediately
-          executeHandler();
-        } else {
-          // For other event types, execute immediately
-          executeHandler();
+        } catch (chainErr) {
+          console.error("Warning, action execution threw:", chainErr);
         }
+      };
+
+      // Initial entry point - start by executing the primary action (onClick currently runs everything immediately sequentially without chaining conditions conceptually? Let's just run them if they are not exclusively chained targets)
+      // We will only execute actions that are NOT the target of another action's success/error chain
+      // Wait, let's keep it simple for now and execute sequentially unless they are explicitly chained targets.
+      // But actually, we don't know the entry actions easily here. Let's just run the FIRST action that has no incoming chains, or run them all if no chaining applies.
+
+      const chainedActionIds = new Set<string>();
+      actions.forEach(a => {
+        if (a.onSuccessActionId && a.onSuccessActionId !== 'none') chainedActionIds.add(a.onSuccessActionId);
+        if (a.onErrorActionId && a.onErrorActionId !== 'none') chainedActionIds.add(a.onErrorActionId);
+        if (a.trueActionId && a.trueActionId !== 'none') chainedActionIds.add(a.trueActionId);
+        if (a.falseActionId && a.falseActionId !== 'none') chainedActionIds.add(a.falseActionId);
+      });
+
+      const rootActions = actions.filter(a => !chainedActionIds.has(a.id));
+
+      // Execute only root actions natively, and let their chaining recursively invoke the others.
+      rootActions.forEach((rootAction) => {
+        executeSingleAction(rootAction);
       });
     } else {
       console.log('Not in preview mode, skipping action execution');
@@ -1079,20 +1242,24 @@ export function RenderableComponent({
                   >
                     <thead>
                       <tr>
-                        {(tableHeaders || []).map((header: string, idx: number) => (
-                          <th
-                            key={`${header}-${idx}`}
-                            className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider"
-                            style={{
-                              color: combinedStyle.color || '#6b7280',
-                              fontFamily: combinedStyle.fontFamily,
-                              fontSize: combinedStyle.fontSize,
-                              fontWeight: combinedStyle.fontWeight || 500
-                            }}
-                          >
-                            {header}
-                          </th>
-                        ))}
+                        {(tableHeaders || []).map((header: string, idx: number) => {
+                          const parts = header.split(':');
+                          const label = parts.length > 1 ? parts[0] : header.replace(/_/g, ' ');
+                          return (
+                            <th
+                              key={`${header}-${idx}`}
+                              className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider"
+                              style={{
+                                color: combinedStyle.color || '#6b7280',
+                                fontFamily: combinedStyle.fontFamily,
+                                fontSize: combinedStyle.fontSize,
+                                fontWeight: combinedStyle.fontWeight || 500
+                              }}
+                            >
+                              {label}
+                            </th>
+                          );
+                        })}
                         {props.showActions && (
                           <th
                             className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wider"
@@ -1111,9 +1278,11 @@ export function RenderableComponent({
                       {(tableData || []).map((row: any, rIdx: number) => (
                         <tr key={rIdx}>
                           {(tableHeaders || []).map((header: string, cIdx: number) => {
-                            let value = row[header];
+                            const parts = header.split(':');
+                            const dataKey = parts.length > 1 ? parts[1] : header;
+                            let value = row[dataKey];
                             if (value === undefined) {
-                              const key = Object.keys(row).find(k => k.toLowerCase() === header.toLowerCase());
+                              const key = Object.keys(row).find(k => k.toLowerCase() === dataKey.toLowerCase());
                               if (key) value = row[key];
                             }
 

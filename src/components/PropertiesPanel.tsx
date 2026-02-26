@@ -5,13 +5,14 @@ import type { ComponentData } from "../App"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
 import { Textarea } from "./ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select"
 import { Button } from "./ui/button"
 import { Separator } from "./ui/separator"
 import { Badge } from "./ui/badge"
 import { Switch } from "./ui/switch"
 import { Checkbox } from "./ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip"
 import { RangeSlider } from "./ui/range-slider"
 import {
   X,
@@ -26,12 +27,13 @@ import {
   Trash2,
   MousePointer,
   RefreshCw,
+  HelpCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@supabase/supabase-js"
 import { supabase } from "../supabase/config/supabaseClient"
 type ActionType = "onClick" | "onHover" | "onFocus" | "onBlur"
-type ActionHandlerType = "custom" | "navigate" | "scroll" | "copy" | "toggle" | "supabase"
+type ActionHandlerType = "custom" | "navigate" | "scroll" | "copy" | "toggle" | "supabase" | "condition"
 
 interface Action {
   id: string
@@ -49,6 +51,19 @@ interface Action {
   supabaseUrl?: string
   supabaseKey?: string
   supabaseData?: Record<string, string>
+  supabaseFilters?: { column: string; operator: string; value: string }[]
+  supabaseSelectColumns?: string
+
+  // For chaining actions
+  onSuccessActionId?: string
+  onErrorActionId?: string
+  onSuccessUrl?: string
+  onErrorUrl?: string
+
+  // For conditional logic
+  conditionCode?: string // The javascript code to evaluate
+  trueActionId?: string
+  falseActionId?: string
 }
 
 interface PropertiesPanelProps {
@@ -61,7 +76,7 @@ interface PropertiesPanelProps {
   showCanvasGrid?: boolean
   onUpdateCanvasBackground?: (color: string) => void
   onToggleCanvasGrid?: (show: boolean) => void
-  pages?: { id: string; name: string }[]
+  pages?: { id: string; name: string; path?: string }[]
   activePageId?: string
 }
 
@@ -160,13 +175,20 @@ export function PropertiesPanel({
     const table = action.supabaseTable || "table_name"
     const operation = action.supabaseOperation || "insert"
     const dataMapping = action.supabaseData || {}
+    const filters = action.supabaseFilters || []
+    const selectColumns = action.supabaseSelectColumns || "*"
+
+    // Check if we have chaining set up
+    const hasChaining = action.onSuccessActionId || action.onErrorActionId;
 
     return `{
   try {
     const table = '${table.replace(/^public\./, '')}';
     const operation = '${operation}';
-    const dataMapping = ${JSON.stringify(dataMapping)
-      };
+    const dataMapping = ${JSON.stringify(dataMapping)};
+    const filters = ${JSON.stringify(filters)};
+    const selectColumns = '${selectColumns.replace(/'/g, "\\'")}';
+    const hasChaining = ${hasChaining ? 'true' : 'false'};
 
   const recordData = {};
 
@@ -191,10 +213,13 @@ export function PropertiesPanel({
 
   // This is a placeholder for the actual execution which happens in the preview/production environment
   // via the window.dispatchEvent('supabase-action', ...) or direct client call.
+  // The actual execution happens via RenderableComponent.tsx's handler intercept.
 
-  window.dispatchEvent(new CustomEvent('supabase-action', {
-    detail: { table, operation, data: recordData }
-  }));
+  if (!hasChaining) {
+    window.dispatchEvent(new CustomEvent('supabase-action', {
+      detail: { table, operation, data: recordData, filters, selectColumns }
+    }));
+  }
 
   return true;
 } catch (error) {
@@ -202,6 +227,24 @@ export function PropertiesPanel({
   return false;
 }
     }`
+  }
+
+  const generateConditionHandler = (action: Action) => {
+    const code = action.conditionCode || "return window.supabaseData && window.supabaseData.length > 0;";
+    return `{
+  try {
+    const evaluateCondition = () => {
+      ${code}
+    };
+    const result = evaluateCondition();
+    console.log('[Condition Action] Evaluated to:', result, 'using code:', \`${code}\`);
+    // Direct chaining handled natively by RenderableComponent.tsx 
+    return result; 
+  } catch (error) {
+    console.error('Error in condition handler:', error);
+    return false;
+  }
+}`
   }
 
   // Handle element picked from the preview
@@ -946,21 +989,25 @@ export function PropertiesPanel({
                                   Supabase Integration
                                 </Badge>
 
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="w-full text-xs h-7 bg-green-50/50 hover:bg-green-100 border-green-200"
-                                  onClick={() => {
-                                    const handler = generateSupabaseHandler(action)
-                                    updateAction(action.id, { handler })
-                                    toast.success("Supabase function updated")
-                                  }}
-                                >
-                                  <RefreshCw className="h-3 w-3 mr-1" /> Update Function
-                                </Button>
-
                                 <div className="space-y-1">
-                                  <Label className="text-xs">Operation</Label>
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-xs">Operation</Label>
+                                    <TooltipProvider delayDuration={300}>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent side="left" className="w-[260px] p-3">
+                                          <div className="space-y-2 text-xs">
+                                            <p><span className="font-bold">Insert:</span> Creates a new row mapping the component's state payload to table columns.</p>
+                                            <p><span className="font-bold">Update:</span> Modifies rows matching your Filter Conditions.</p>
+                                            <p><span className="font-bold">Delete:</span> Removes rows matching your Filter Conditions.</p>
+                                            <p><span className="font-bold">Select:</span> Queries data and saves it to <code>window.supabaseData</code> for conditional chaining.</p>
+                                          </div>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
                                   <Select
                                     value={action.supabaseOperation || "insert"}
                                     onValueChange={(value: any) => updateAction(action.id, { supabaseOperation: value })}
@@ -978,7 +1025,21 @@ export function PropertiesPanel({
                                 </div>
 
                                 <div className="space-y-1">
-                                  <Label className="text-xs">Table Name</Label>
+                                  <div className="flex justify-between items-center mb-1">
+                                    <Label className="text-xs">Table Name</Label>
+                                    <TooltipProvider delayDuration={300}>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help relative z-10" />
+                                        </TooltipTrigger>
+                                        <TooltipContent side="left" className="w-[260px] p-3">
+                                          <p className="text-xs">
+                                            The exact name of your Supabase table in the public schema. Case sensitive. (e.g. <code>profiles</code> or <code>blog_posts</code>)
+                                          </p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  </div>
                                   <Input
                                     value={action.supabaseTable || ""}
                                     onChange={(e) => updateAction(action.id, { supabaseTable: e.target.value })}
@@ -988,86 +1049,310 @@ export function PropertiesPanel({
                                 </div>
 
                                 {/* Show mapping UI for ALL operations, but labeled differently */}
-                                <div className="space-y-2">
-                                  <Label className="text-xs font-medium">
-                                    {action.supabaseOperation === 'select'
-                                      ? "Filter Conditions (WHERE)"
-                                      : action.supabaseOperation === 'delete'
-                                        ? "Record Identifier (e.g. id)"
-                                        : "Column Mapping"}
-                                  </Label>
-                                  <div className="space-y-2">
-                                    {/* Helper to add a mapping row */}
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="w-full h-7 text-xs"
-                                      onClick={() => {
-                                        const currentData = action.supabaseData || {}
-                                        updateAction(action.id, {
-                                          supabaseData: { ...currentData, "": "" }
-                                        })
-                                      }}
-                                    >
-                                      <Plus className="h-3 w-3 mr-1" /> Add Column
-                                    </Button>
+                                {/* If it's a select operation, let the user define columns */}
+                                {action.supabaseOperation === 'select' && (
+                                  <div className="space-y-1 mt-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                      <Label className="text-xs">Columns to Select</Label>
+                                      <TooltipProvider delayDuration={300}>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help relative z-10" />
+                                          </TooltipTrigger>
+                                          <TooltipContent side="left" className="w-[260px] p-3">
+                                            <p className="text-xs">
+                                              Comma-separated list of columns to retrieve. Use <code>*</code> to get all columns. (e.g. <code>id, name, created_at</code>)
+                                            </p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    </div>
+                                    <Input
+                                      value={action.supabaseSelectColumns ?? "*"}
+                                      onChange={(e) => updateAction(action.id, { supabaseSelectColumns: e.target.value })}
+                                      placeholder="e.g. *, id, name"
+                                      className="h-7 text-xs"
+                                    />
+                                  </div>
+                                )}
 
-                                    {Object.entries(action.supabaseData || {}).map(([col, val], idx) => (
-                                      <div key={idx} className="flex flex-col gap-1 p-2 border rounded bg-slate-50">
-                                        <div className="flex gap-2">
-                                          <Input
-                                            placeholder="Column"
-                                            value={col}
-                                            onChange={(e) => {
-                                              const newData = { ...action.supabaseData }
-                                              const newCol = e.target.value
-                                              delete newData[col]
-                                              newData[newCol] = val
-                                              updateAction(action.id, { supabaseData: newData })
-                                            }}
-                                            className="h-6 text-xs flex-1"
-                                          />
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6"
-                                            onClick={() => {
-                                              const newData = { ...action.supabaseData }
-                                              delete newData[col]
-                                              updateAction(action.id, { supabaseData: newData })
-                                            }}
-                                          >
-                                            <X className="h-3 w-3" />
-                                          </Button>
+                                {/* Filter Conditions section (for Select, Update, Delete) */}
+                                {action.supabaseOperation !== 'insert' && (
+                                  <div className="space-y-2 mt-4 pt-2 border-t">
+                                    <div className="flex justify-between items-center mb-2">
+                                      <Label className="text-xs font-medium">Filter Conditions (WHERE)</Label>
+                                      <TooltipProvider delayDuration={300}>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help relative z-10" />
+                                          </TooltipTrigger>
+                                          <TooltipContent side="left" className="w-[260px] p-3">
+                                            <div className="space-y-2 text-xs">
+                                              <p>Add conditions to securely limit which rows are affected by this action.</p>
+                                              <p className="text-muted-foreground">You can also use javascript expressions like <code>{"`{window.userId}`"}</code> for dynamic filtering!</p>
+                                            </div>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full h-7 text-xs border-dashed"
+                                        onClick={() => {
+                                          const currentFilters = action.supabaseFilters || [];
+                                          updateAction(action.id, {
+                                            supabaseFilters: [...currentFilters, { column: "", operator: "eq", value: "" }]
+                                          });
+                                        }}
+                                      >
+                                        <Plus className="h-3 w-3 mr-1" /> Add Filter
+                                      </Button>
+
+                                      {(action.supabaseFilters || []).map((filter, idx) => (
+                                        <div key={idx} className="flex flex-col gap-1 p-2 border rounded bg-slate-50">
+                                          <div className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 items-center">
+                                            <Input
+                                              placeholder="Col"
+                                              value={filter.column}
+                                              onChange={(e) => {
+                                                const newFilters = [...(action.supabaseFilters || [])];
+                                                newFilters[idx].column = e.target.value;
+                                                updateAction(action.id, { supabaseFilters: newFilters });
+                                              }}
+                                              className="h-6 text-xs w-full"
+                                            />
+
+                                            <Select
+                                              value={filter.operator || "eq"}
+                                              onValueChange={(val: string) => {
+                                                const newFilters = [...(action.supabaseFilters || [])];
+                                                newFilters[idx].operator = val;
+                                                updateAction(action.id, { supabaseFilters: newFilters });
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-6 text-xs w-full px-1">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="eq">Equals (=)</SelectItem>
+                                                <SelectItem value="neq">Not Eq (!=)</SelectItem>
+                                                <SelectItem value="gt">Greater (&gt;)</SelectItem>
+                                                <SelectItem value="lt">Less (&lt;)</SelectItem>
+                                                <SelectItem value="gte">Greater Eq (&gt;=)</SelectItem>
+                                                <SelectItem value="lte">Less Eq (&lt;=)</SelectItem>
+                                                <SelectItem value="like">Like</SelectItem>
+                                                <SelectItem value="ilike">ILike</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+
+                                            <TooltipProvider delayDuration={300}>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <div className="w-full min-w-0">
+                                                    <Input
+                                                      placeholder="Value or Element ID"
+                                                      value={filter.value}
+                                                      onChange={(e) => {
+                                                        const newFilters = [...(action.supabaseFilters || [])];
+                                                        newFilters[idx].value = e.target.value;
+                                                        updateAction(action.id, { supabaseFilters: newFilters });
+                                                      }}
+                                                      className="h-6 text-xs w-full"
+                                                    />
+                                                  </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="bottom" className="w-[260px] p-3">
+                                                  <div className="space-y-2 text-xs">
+                                                    <p>Hardcode a value (e.g. <code>admin</code>), reference an element's value (e.g. <code>#user-input</code>), or use JS globals (e.g. <code>{"`{window.userId}`"}</code>).</p>
+                                                  </div>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6 shrink-0"
+                                              onClick={() => {
+                                                const newFilters = [...(action.supabaseFilters || [])];
+                                                newFilters.splice(idx, 1);
+                                                updateAction(action.id, { supabaseFilters: newFilters });
+                                              }}
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </Button>
+                                          </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                          <Input
-                                            placeholder="Value or Element ID"
-                                            value={val}
-                                            onChange={(e) => {
-                                              const newData = { ...action.supabaseData }
-                                              newData[col] = e.target.value
-                                              updateAction(action.id, { supabaseData: newData })
-                                            }}
-                                            className="h-6 text-xs flex-1"
-                                          />
-                                          <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="icon"
-                                            className={`h-6 w-6 ${isPickingElement === action.id && pickingMode?.column === col ? "bg-yellow-100 border-yellow-300" : ""}`}
-                                            onClick={() => {
-                                              setPickingMode({ type: "column", column: col })
-                                              startElementPicking(action.id)
-                                            }}
-                                            title="Pick Input Element"
-                                          >
-                                            <MousePointer className="h-3 w-3" />
-                                          </Button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Show data mapping payload for Insert / Update */}
+                                {(action.supabaseOperation === 'insert' || action.supabaseOperation === 'update') && (
+                                  <div className="space-y-2 mt-4 pt-2 border-t">
+                                    <Label className="text-xs font-medium">Payload Mapping (SET)</Label>
+                                    <div className="space-y-2">
+                                      {/* Helper to add a mapping row */}
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full h-7 text-xs"
+                                        onClick={() => {
+                                          const currentData = action.supabaseData || {}
+                                          updateAction(action.id, {
+                                            supabaseData: { ...currentData, "": "" }
+                                          })
+                                        }}
+                                      >
+                                        <Plus className="h-3 w-3 mr-1" /> Add Column
+                                      </Button>
+
+                                      {Object.entries(action.supabaseData || {}).map(([col, val], idx) => (
+                                        <div key={idx} className="flex flex-col gap-1 p-2 border rounded bg-slate-50">
+                                          <div className="flex gap-2">
+                                            <Input
+                                              placeholder="Column"
+                                              value={col}
+                                              onChange={(e) => {
+                                                const newData = { ...action.supabaseData }
+                                                const newCol = e.target.value
+                                                delete newData[col]
+                                                newData[newCol] = val
+                                                updateAction(action.id, { supabaseData: newData })
+                                              }}
+                                              className="h-6 text-xs flex-1"
+                                            />
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6"
+                                              onClick={() => {
+                                                const newData = { ...action.supabaseData }
+                                                delete newData[col]
+                                                updateAction(action.id, { supabaseData: newData })
+                                              }}
+                                            >
+                                              <X className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <Input
+                                              placeholder="Value or Element ID"
+                                              value={val}
+                                              onChange={(e) => {
+                                                const newData = { ...action.supabaseData }
+                                                newData[col] = e.target.value
+                                                updateAction(action.id, { supabaseData: newData })
+                                              }}
+                                              className="h-6 text-xs flex-1"
+                                            />
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              size="icon"
+                                              className={`h-6 w-6 ${isPickingElement === action.id && pickingMode?.column === col ? "bg-yellow-100 border-yellow-300" : ""}`}
+                                              onClick={() => {
+                                                setPickingMode({ type: "column", column: col })
+                                                startElementPicking(action.id)
+                                              }}
+                                              title="Pick Input Element"
+                                            >
+                                              <MousePointer className="h-3 w-3" />
+                                            </Button>
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          }
+
+                          {/* Condition Action */}
+                          {
+                            action.handlerType === "condition" && (
+                              <div className="space-y-3 pt-2 border-t border-dashed">
+                                <Badge variant="outline" className="w-full justify-center bg-blue-50 text-blue-700 border-blue-200">
+                                  Logic Branch (If / Else)
+                                </Badge>
+
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Condition (JavaScript)</Label>
+                                  <Textarea
+                                    value={action.conditionCode || "return window.supabaseData && window.supabaseData.length > 0;"}
+                                    onChange={(e) => {
+                                      const code = e.target.value;
+                                      updateAction(action.id, {
+                                        conditionCode: code,
+                                        handler: generateConditionHandler({ ...action, conditionCode: code })
+                                      });
+                                    }}
+                                    placeholder="return true;"
+                                    className="min-h-[60px] text-xs font-mono"
+                                  />
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Must return a boolean. e.g. evaluating <code>window.supabaseData</code>
+                                  </p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-green-600 font-semibold">If True: Run Action</Label>
+                                    <Select
+                                      value={action.trueActionId || "none"}
+                                      onValueChange={(val: string) => updateAction(action.id, { trueActionId: val === 'none' ? undefined : val })}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs border-green-200">
+                                        <SelectValue placeholder="Select action..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="none">None</SelectItem>
+                                        {actions.filter(a => a.id !== action.id).map(a => {
+                                          const getActionLabel = (act: any) => {
+                                            if (act.handlerType === 'navigate' && act.url) return `Navigate (${act.url})`;
+                                            if (act.handlerType === 'supabase' && act.supabaseTable) return `Supabase ${act.supabaseOperation || 'insert'} (${act.supabaseTable})`;
+                                            if (act.handlerType === 'toggle' && act.selector) return `Toggle (${act.selector})`;
+                                            if (act.handlerType === 'scroll' && act.selector) return `Scroll (${act.selector})`;
+                                            return `${act.handlerType} (${act.id.slice(0, 12)})`;
+                                          };
+                                          return (
+                                            <SelectItem key={a.id} value={a.id}>{getActionLabel(a)}</SelectItem>
+                                          )
+                                        })}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-red-600 font-semibold">If False: Run Action</Label>
+                                    <Select
+                                      value={action.falseActionId || "none"}
+                                      onValueChange={(val: string) => updateAction(action.id, { falseActionId: val === 'none' ? undefined : val })}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs border-red-200">
+                                        <SelectValue placeholder="Select action..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="none">None</SelectItem>
+                                        {actions.filter(a => a.id !== action.id).map(a => {
+                                          const getActionLabel = (act: any) => {
+                                            if (act.handlerType === 'navigate' && act.url) return `Navigate (${act.url})`;
+                                            if (act.handlerType === 'supabase' && act.supabaseTable) return `Supabase ${act.supabaseOperation || 'insert'} (${act.supabaseTable})`;
+                                            if (act.handlerType === 'toggle' && act.selector) return `Toggle (${act.selector})`;
+                                            if (act.handlerType === 'scroll' && act.selector) return `Scroll (${act.selector})`;
+                                            return `${act.handlerType} (${act.id.slice(0, 12)})`;
+                                          };
+                                          return (
+                                            <SelectItem key={a.id} value={a.id}>{getActionLabel(a)}</SelectItem>
+                                          )
+                                        })}
+                                      </SelectContent>
+                                    </Select>
                                   </div>
                                 </div>
                               </div>
@@ -1104,6 +1389,116 @@ export function PropertiesPanel({
                         </Button>
                       </div>
 
+                      {/* Generic Action Chaining Configuration for non-conditions */}
+                      {
+                        action.handlerType !== 'condition' && (
+                          <div className="pt-2 mt-2 border-t border-dashed space-y-2">
+                            <div className="flex justify-between items-center mb-1">
+                              <Label className="text-[10px] uppercase font-bold text-muted-foreground">Action Chaining</Label>
+                              <TooltipProvider delayDuration={300}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="w-[260px] p-3">
+                                    <p className="text-xs">
+                                      Automatically trigger another action locally after this action succeeds or fails. Very useful for navigating the user to a success page after an insert!
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1 min-w-0">
+                                <Label className="text-[10px]">On Success Run:</Label>
+                                <Select
+                                  value={action.onSuccessActionId || (action.onSuccessUrl ? `url:${action.onSuccessUrl}` : "none")}
+                                  onValueChange={(val: string) => {
+                                    if (val === 'none') {
+                                      updateAction(action.id, { onSuccessActionId: undefined, onSuccessUrl: undefined });
+                                    } else if (val.startsWith('url:')) {
+                                      updateAction(action.id, { onSuccessUrl: val.replace('url:', ''), onSuccessActionId: undefined });
+                                    } else {
+                                      updateAction(action.id, { onSuccessActionId: val, onSuccessUrl: undefined });
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-6 text-[10px]">
+                                    <SelectValue placeholder="None" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {pages && pages.length > 0 && (
+                                      <SelectGroup>
+                                        {pages.map(p => (
+                                          <SelectItem key={p.id} value={`url:${p.path || p.id}`}>Go to {p.name}</SelectItem>
+                                        ))}
+                                      </SelectGroup>
+                                    )}
+                                    <SelectGroup>
+                                      {actions.filter(a => a.id !== action.id).map(a => {
+                                        const getActionLabel = (act: any) => {
+                                          if (act.handlerType === 'navigate' && act.url) return `Navigate (${act.url})`;
+                                          if (act.handlerType === 'supabase' && act.supabaseTable) return `Supabase ${act.supabaseOperation || 'insert'} (${act.supabaseTable})`;
+                                          if (act.handlerType === 'toggle' && act.selector) return `Toggle (${act.selector})`;
+                                          if (act.handlerType === 'scroll' && act.selector) return `Scroll (${act.selector})`;
+                                          return `${act.handlerType} (${act.id.slice(0, 12)})`;
+                                        };
+                                        return (
+                                          <SelectItem key={a.id} value={a.id}>{getActionLabel(a)}</SelectItem>
+                                        )
+                                      })}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1 min-w-0">
+                                <Label className="text-[10px]">On Error Run:</Label>
+                                <Select
+                                  value={action.onErrorActionId || (action.onErrorUrl ? `url:${action.onErrorUrl}` : "none")}
+                                  onValueChange={(val: string) => {
+                                    if (val === 'none') {
+                                      updateAction(action.id, { onErrorActionId: undefined, onErrorUrl: undefined });
+                                    } else if (val.startsWith('url:')) {
+                                      updateAction(action.id, { onErrorUrl: val.replace('url:', ''), onErrorActionId: undefined });
+                                    } else {
+                                      updateAction(action.id, { onErrorActionId: val, onErrorUrl: undefined });
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-6 text-[10px]">
+                                    <SelectValue placeholder="None" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {pages && pages.length > 0 && (
+                                      <SelectGroup>
+                                        {pages.map(p => (
+                                          <SelectItem key={p.id} value={`url:${p.path || p.id}`}>Go to {p.name}</SelectItem>
+                                        ))}
+                                      </SelectGroup>
+                                    )}
+                                    <SelectGroup>
+                                      {actions.filter(a => a.id !== action.id).map(a => {
+                                        const getActionLabel = (act: any) => {
+                                          if (act.handlerType === 'navigate' && act.url) return `Navigate (${act.url})`;
+                                          if (act.handlerType === 'supabase' && act.supabaseTable) return `Supabase ${act.supabaseOperation || 'insert'} (${act.supabaseTable})`;
+                                          if (act.handlerType === 'toggle' && act.selector) return `Toggle (${act.selector})`;
+                                          if (act.handlerType === 'scroll' && act.selector) return `Scroll (${act.selector})`;
+                                          return `${act.handlerType} (${act.id.slice(0, 12)})`;
+                                        };
+                                        return (
+                                          <SelectItem key={a.id} value={a.id}>{getActionLabel(a)}</SelectItem>
+                                        )
+                                      })}
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                       {action.handlerType === "custom" && (
                         <div className="space-y-1 mt-2">
                           <Label className="text-xs">Action Handler</Label>
@@ -1115,7 +1510,8 @@ export function PropertiesPanel({
                           />
                           <p className="text-xs text-muted-foreground mt-1">Enter JavaScript code to run on {action.type}</p>
                         </div>
-                      )}
+                      )
+                      }
                     </div>
                   ))}
                 </div>
@@ -1128,7 +1524,8 @@ export function PropertiesPanel({
         const headers = Array.isArray(props.headers) ? (props.headers as string[]) : []
 
         const addHeader = () => {
-          updateProps("headers", [...headers, `Column ${headers.length + 1}`])
+          const nextIdx = headers.length + 1;
+          updateProps("headers", [...headers, `Label ${nextIdx}:column_${nextIdx}`])
         }
 
         const updateHeader = (index: number, value: string) => {
@@ -1163,23 +1560,42 @@ export function PropertiesPanel({
               </div>
 
               <div className="space-y-2">
-                {headers.map((header, idx) => (
-                  <div key={idx} className="flex gap-2">
-                    <Input
-                      value={header}
-                      onChange={(e) => updateHeader(idx, e.target.value)}
-                      className="h-7 text-xs"
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeHeader(idx)}
-                      className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
+                {headers.map((header, idx) => {
+                  const parts = header.split(':');
+                  const label = parts.length > 1 ? parts[0] : header;
+                  const dataKey = parts.length > 1 ? parts[1] : header;
+
+                  return (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <Input
+                        placeholder="Label"
+                        value={label}
+                        onChange={(e) => {
+                          const newLabel = e.target.value;
+                          updateHeader(idx, `${newLabel}:${dataKey}`);
+                        }}
+                        className="h-7 text-xs flex-1"
+                      />
+                      <Input
+                        placeholder="Column"
+                        value={dataKey}
+                        onChange={(e) => {
+                          const newKey = e.target.value;
+                          updateHeader(idx, `${label}:${newKey}`);
+                        }}
+                        className="h-7 text-xs flex-1"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeHeader(idx)}
+                        className="h-7 w-7 p-0 flex-shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  );
+                })}
                 {headers.length === 0 && (
                   <p className="text-xs text-muted-foreground text-center py-2">No headers defined</p>
                 )}
@@ -1248,7 +1664,141 @@ export function PropertiesPanel({
                 </Select>
               </div>
 
-              <p className="text-[10px] text-muted-foreground">
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <Label className="text-xs">Columns to Select</Label>
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help relative z-10" />
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="w-[260px] p-3">
+                        <p className="text-xs">
+                          Comma-separated list of columns to retrieve. Use <code>*</code> to get all columns. (e.g. <code>id, name, created_at</code>)
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Input
+                  value={props.supabaseSelectColumns ?? "*"}
+                  onChange={(e) => updateProps("supabaseSelectColumns", e.target.value)}
+                  placeholder="e.g. *, id, name"
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <div className="space-y-2 pt-2 border-t mt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <Label className="text-xs font-medium">Filter Conditions (WHERE)</Label>
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help relative z-10" />
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="w-[260px] p-3">
+                        <div className="space-y-2 text-xs">
+                          <p>Add conditions to securely limit which rows are fetched for this table.</p>
+                          <p className="text-muted-foreground">You can also use javascript expressions like <code>{"`{window.userId}`"}</code> for dynamic filtering!</p>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs border-dashed"
+                    onClick={() => {
+                      const currentFilters = props.supabaseFilters || [];
+                      updateProps("supabaseFilters", [...currentFilters, { column: "", operator: "eq", value: "" }]);
+                    }}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add Filter
+                  </Button>
+
+                  {(props.supabaseFilters || []).map((filter: any, idx: number) => (
+                    <div key={idx} className="flex flex-col gap-1 p-2 border rounded bg-slate-50">
+                      <div className="grid grid-cols-[1fr_1fr_2fr_auto] gap-2 items-center">
+                        <Input
+                          placeholder="Col"
+                          value={filter.column}
+                          onChange={(e) => {
+                            const newFilters = [...(props.supabaseFilters || [])];
+                            newFilters[idx] = { ...newFilters[idx], column: e.target.value };
+                            updateProps("supabaseFilters", newFilters);
+                          }}
+                          className="h-6 text-xs w-full"
+                        />
+
+                        <Select
+                          value={filter.operator || "eq"}
+                          onValueChange={(val: string) => {
+                            const newFilters = [...(props.supabaseFilters || [])];
+                            newFilters[idx] = { ...newFilters[idx], operator: val };
+                            updateProps("supabaseFilters", newFilters);
+                          }}
+                        >
+                          <SelectTrigger className="h-6 text-xs w-full px-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="eq">Equals (=)</SelectItem>
+                            <SelectItem value="neq">Not Eq (!=)</SelectItem>
+                            <SelectItem value="gt">Greater (&gt;)</SelectItem>
+                            <SelectItem value="lt">Less (&lt;)</SelectItem>
+                            <SelectItem value="gte">Greater Eq (&gt;=)</SelectItem>
+                            <SelectItem value="lte">Less Eq (&lt;=)</SelectItem>
+                            <SelectItem value="like">Like</SelectItem>
+                            <SelectItem value="ilike">ILike</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <TooltipProvider delayDuration={300}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="w-full min-w-0">
+                                <Input
+                                  placeholder="Value or Element ID"
+                                  value={filter.value}
+                                  onChange={(e) => {
+                                    const newFilters = [...(props.supabaseFilters || [])];
+                                    newFilters[idx] = { ...newFilters[idx], value: e.target.value };
+                                    updateProps("supabaseFilters", newFilters);
+                                  }}
+                                  className="h-6 text-xs w-full"
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="w-[260px] p-3">
+                              <div className="space-y-2 text-xs">
+                                <p>Hardcode a value (e.g. <code>admin</code>), reference an element's value (e.g. <code>#user-input</code>), or use JS globals (e.g. <code>{"`{window.userId}`"}</code>).</p>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          onClick={() => {
+                            const newFilters = [...(props.supabaseFilters || [])];
+                            newFilters.splice(idx, 1);
+                            updateProps("supabaseFilters", newFilters);
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-[10px] text-muted-foreground mt-4">
                 Connect to a Supabase table to automatically populate headers and data.
               </p>
               <Button
@@ -1272,6 +1822,7 @@ export function PropertiesPanel({
 
                     if (data && data.length > 0) {
                       const detectedHeaders = Object.keys(data[0])
+                      // Only update headers if the user hasn't explicitly set them to * previously, etc. We will respect * as well.
                       updateProps("headers", detectedHeaders)
                       toast.success(`Detected ${detectedHeaders.length} columns from ${props.supabaseTable}`)
                     } else {
