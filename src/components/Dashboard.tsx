@@ -1949,7 +1949,7 @@ export function Dashboard({
                     <div
                        className={`grid ${activeSection === "drafts" ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" : viewMode === "grid" ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4" : "grid-cols-1"} gap-3 md:gap-4`}
                     >
-                       {filteredProjects.map((project, index) => (
+                       {filteredProjects.map((project) => (
                         <Card
                           key={project.id}
                          className={`bg-card border-border cursor-pointer transition-all group overflow-hidden ${activeSection === "drafts" ? "hover:-translate-y-1 hover:shadow-md hover:border-blue-400/40" : "hover:border-blue-500/50"}`}
@@ -1972,9 +1972,14 @@ export function Dashboard({
                                   <div className="h-7 w-7 rounded-full bg-violet-500/20 text-violet-500 flex items-center justify-center text-xs font-semibold shrink-0">
                                     {getDraftCardInitial(project.name)}
                                   </div>
-                                  <p className="text-sm font-semibold text-foreground line-clamp-1">
-                                    {project.name}
-                                  </p>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-foreground line-clamp-1">
+                                      {project.name}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground line-clamp-1">
+                                      {getRelativeLastModified(project.lastModified)}
+                                    </p>
+                                  </div>
                                 </div>
 
                                 <Badge
@@ -2038,21 +2043,7 @@ export function Dashboard({
 
                               </div>
 
-                              <div className="mt-3 space-y-1.5 text-[11px] text-muted-foreground">
-                                <div className="flex items-center gap-1.5">
-                                  <Layout className="w-3 h-3" />
-                                  <span className="line-clamp-1">
-                                    {project.id.slice(0, 8)}-{project.id.slice(8, 12)}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-1.5">
-                                    <Folder className="w-3 h-3" />
-                                    <span>{project.views ?? Math.max(12, (project.name.length + index) * 3)}</span>
-                                  </div>
-                                  <span>{getRelativeLastModified(project.lastModified)}</span>
-                                </div>
-                              </div>
+                              
                             </CardContent>
                           ) : (
                             <>
