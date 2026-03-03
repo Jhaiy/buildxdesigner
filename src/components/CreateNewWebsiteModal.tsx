@@ -481,7 +481,7 @@ export function CreateNewWebsiteModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[1400px] w-[96vw] max-h-[95vh] p-0 overflow-auto">
+     <DialogContent className="w-[98vw] max-w-[1700px] max-h-[95vh] p-0 overflow-auto">
         {!showNameInput ? (
           <>
             <DialogHeader className="px-6 pt-6 pb-4 border-b">
