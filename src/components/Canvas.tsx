@@ -10,7 +10,7 @@ import {
   saveProjectMetadata,
 } from "../supabase/data/projectService";
 import { setLocalProjectCache } from "../supabase/data/projectService";
-import { MinimalComponentPanel } from "./MinimalComponentPanel";
+
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import { Plus, Loader2 } from "lucide-react";
 
@@ -998,18 +998,7 @@ export function Canvas({
           }
         }}
       >
-        {/* Minimal Component Panel - Hide in Read Only */}
-        {!readOnly && (
-          <MinimalComponentPanel
-            onAddComponent={(component) => {
-              const event = new CustomEvent("addComponent", {
-                detail: { ...component, page_id: activePageId },
-              });
-              window.dispatchEvent(event);
-            }}
-          />
-        )}
-
+      
         {/* Zoom Controls - Hide in Read Only */}
         {!readOnly && (
           <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-background/90 backdrop-blur-sm border border-border rounded-lg shadow-lg px-2 py-1.5 z-50">
@@ -1086,10 +1075,10 @@ export function Canvas({
               style={{
                 transform: `scale(${canvasZoom / 100})`,
                 transformOrigin: "top left",
-                minWidth: "300vw",
-                minHeight: "300vh",
-                width: "300vw",
-                height: "300vh",
+                minWidth: "1920px",
+                width: "1920px",
+                minHeight: "20000px",
+                height: "20000px",
                 ...canvasStyle,
               }}
             >

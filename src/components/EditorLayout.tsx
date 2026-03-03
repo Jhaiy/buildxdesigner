@@ -25,12 +25,7 @@ import { ShareModal } from "./ShareModal";
 import { RightSidebar } from "./RightSidebar";
 import { EditorFooter } from "./EditorFooter";
 import { EditorTopBar } from "./EditorTopBar";
-import {
-  TooltipProvider,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "./ui/tooltip";
+import { TooltipProvider } from "./ui/tooltip";
 import { ResizeTooltip } from "./ResizeTooltip";
 import { EditTooltip } from "./EditTooltip";
 import { Toaster } from "./ui/sonner";
@@ -258,87 +253,14 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
             <div
               className={`flex-1 flex flex-col overflow-hidden bg-muted/20 ${state.isFullscreen ? "fullscreen-canvas" : ""}`}
             >
-              {/* Canvas Controls (Width Resizer & Device Toggle) */}
-              {state.viewMode === "design" && (
-                <div className="flex items-center justify-between px-4 py-2 border-b bg-card shadow-sm">
-                  <div className="flex items-center bg-muted/30 p-1 rounded-lg border border-border">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() =>
-                            setState((prev) => ({ ...prev, canvasWidth: 375 }))
-                          }
-                          className={`p-1.5 rounded-md transition-all ${state.canvasWidth <= 480 ? "bg-card text-purple-600 shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                        >
-                          <Smartphone className="w-4 h-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Mobile (375px)</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() =>
-                            setState((prev) => ({ ...prev, canvasWidth: 768 }))
-                          }
-                          className={`p-1.5 rounded-md transition-all ${state.canvasWidth > 480 && state.canvasWidth <= 1024 ? "bg-card text-purple-600 shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                        >
-                          <Laptop className="w-4 h-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Tablet (768px)</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() =>
-                            setState((prev) => ({ ...prev, canvasWidth: 1140 }))
-                          }
-                          className={`p-1.5 rounded-md transition-all ${state.canvasWidth > 1024 && state.canvasWidth <= 1280 ? "bg-card text-purple-600 shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                        >
-                          <Monitor className="w-4 h-4" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Desktop (1140px)</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() =>
-                            setState((prev) => ({ ...prev, canvasWidth: 1440 }))
-                          }
-                          className={`p-1.5 rounded-md transition-all ${state.canvasWidth > 1280 ? "bg-card text-purple-600 shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                        >
-                          <div className="relative">
-                            <Monitor className="w-4 h-4" />
-                            <div className="absolute -right-1 -top-1 w-2 h-2 bg-purple-500 rounded-full border border-card" />
-                          </div>
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>Widescreen (1440px)</TooltipContent>
-                    </Tooltip>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground">
-                      Limit: 1140px - 1440px
-                    </span>
-                  </div>
-                </div>
-              )}
+            
 
               <div className="flex-1 flex overflow-hidden justify-center items-start p-6 custom-scrollbar bg-muted/10">
                 <div
                   className="bg-card shadow-2xl transition-all duration-300 ease-in-out h-full overflow-hidden border border-border rounded-lg relative"
                   style={{
-                    width:
-                      state.viewMode === "design"
-                        ? `${state.canvasWidth}px`
-                        : "100%",
-                    maxWidth: state.viewMode === "design" ? "1440px" : "none",
+                      width: state.viewMode === "design" ? "1920px" : "100%",
+                    maxWidth: state.viewMode === "design" ? "1920px" : "none",
                   }}
                 >
                   {state.viewMode === "design" && (

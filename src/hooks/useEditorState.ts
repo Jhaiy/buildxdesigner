@@ -91,7 +91,7 @@ export function useEditorState() {
     isResizingRightSidebar: false,
     propertiesPanelVisible: true,
     aiAssistantVisible: true,
-    canvasWidth: 1280,
+        canvasWidth: 1920,
     showMobileProperties: false,
     canvasZoom: 100,
     currentProjectId: getInitialProjectId(),
