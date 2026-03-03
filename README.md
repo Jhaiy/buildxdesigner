@@ -1,14 +1,14 @@
 <div align="center">
 
-# 😭 <br> **AYOKO NA MAG CAPSTONE** <br> 😭
+# 😭 <br> **SANA PUMASA SA CAPSTONE** <br> 😭
 
-<img src="https://media.tenor.com/26915f0eb62e737cc5758a72722ca994/tenor.gif" width="300px"/>
+<img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3VubndhNW9iZXU0am5vdmF6Nmx1NjE2N3Z6amN6NWF6bmd3ZnR3eiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/L95W4wv8nnb9K/giphy.gif" width="400px"/>
 
-### 🚩 Current Status: OVERWHELMED
-**Mental Capacity:** 0% | **Will to Live:** Negative
+### 🚩 Status: Dasal Lang Talaga 
+**Progress:** 1% | **Stress Level:** 999% | **Coffee:** Infinite
 
 ---
 
-<img src="https://capsule-render.vercel.app/render?type=waving&color=000000&height=150&section=header&text=SUKO%20NA%20PO%20AKO&fontSize=70" width="100%" />
+
 
 </div>
