@@ -681,8 +681,7 @@ export function Dashboard({
     return projectLikeCounts[projectId] ?? template.favorites ?? 0;
   };
 
-  const getTemplateViewsCount = (template: TemplateCardData) =>
-    template.views ?? 0;
+
 
   const extractTemplateLayoutFromApiResponse = (
     payload: any,
@@ -2217,7 +2216,7 @@ export function Dashboard({
                   <div className="shrink-0 py-16 px-4">
                     <div className="w-full max-w-4xl mx-auto">
                       <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-center text-foreground mb-8">
-                        What do you want to create?
+                       What would you like help with?
                       </h1>
 
                       <div className="relative max-w-3xl mx-auto">
@@ -2231,7 +2230,7 @@ export function Dashboard({
                             <Plus className="w-5 h-5" />
                           </Button>
                           <Input
-                            placeholder="Ask buildx to generate..."
+                            placeholder="Ask buildx now ..."
                             value={aiPrompt}
                             onChange={(e) => setAiPrompt(e.target.value)}
                             onKeyDown={(e) => {
@@ -2371,17 +2370,9 @@ export function Dashboard({
                                       </span>
                                     </div>
 
-                                    {/* Views and favorites */}
+                                   {/* Favorites */}
                                     <div className="flex items-center gap-3">
-                                      <div className="flex items-center gap-1 text-muted-foreground">
-                                        <Eye className="w-4 h-4" />
-                                        <span className="text-xs">
-                                          {getTemplateViewsCount(template) >=
-                                          1000
-                                            ? `${(getTemplateViewsCount(template) / 1000).toFixed(1)}k`
-                                            : getTemplateViewsCount(template)}
-                                        </span>
-                                      </div>
+                                   
                                       <button
                                         type="button"
                                         onClick={(event) =>

@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Search, X, Sparkles, Eye, Heart } from "lucide-react";
+import { Search, X, Sparkles, Heart } from "lucide-react";
 
 interface Template {
   id: string;
@@ -245,12 +245,6 @@ const templates: Template[] = [
   },
 ];
 
-const formatViews = (views: number): string => {
-  if (views >= 1000) {
-    return `${(views / 1000).toFixed(1)}k`;
-  }
-  return views.toString();
-};
 
 const categories = [
   "All",
@@ -590,14 +584,7 @@ export function CreateNewWebsiteModal({
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                  <div className="flex items-center gap-1">
-                                    <Eye className="w-3.5 h-3.5" />
-                                    <span>
-                                      {template.views
-                                        ? formatViews(template.views)
-                                        : "0"}
-                                    </span>
-                                  </div>
+                                
                                   <div className="flex items-center gap-1">
                                     <Heart className="w-3.5 h-3.5" />
                                     <span>{template.favorites || 0}</span>
@@ -662,14 +649,7 @@ export function CreateNewWebsiteModal({
                                 </span>
                               </div>
                               <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                <div className="flex items-center gap-1">
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>
-                                    {template.views
-                                      ? formatViews(template.views)
-                                      : "0"}
-                                  </span>
-                                </div>
+                               
                                 <div className="flex items-center gap-1">
                                   <Heart className="w-3.5 h-3.5" />
                                   <span>{template.favorites || 0}</span>
