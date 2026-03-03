@@ -1,13 +1,14 @@
 <div align="center">
 
-# 😭 **AYOKO NA MAG CAPSTONE** 😭
+# 😭 <br> **AYOKO NA MAG CAPSTONE** <br> 😭
 
-![Crying Cat](https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJueGZ3bmZ3bmZ3bmZ3bmZ3bmZ3bmZ3bmZ3bmZ3bmZ3bmZ3bmZ3JnZXA9YjJfYm9keV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9cw/OPU6wUKARAuxO/giphy.gif)
+<img src="https://media.tenor.com/26915f0eb62e737cc5758a72722ca994/tenor.gif" width="300px"/>
 
-### 🚩 Status: Mental Health Breakdown in Progress...
+### 🚩 Current Status: OVERWHELMED
+**Mental Capacity:** 0% | **Will to Live:** Negative
 
 ---
 
-  <img src="https://capsule-render.vercel.app/render?type=waving&color=auto&height=200&section=header&text=SUKO%20NA%20PO%20AKO&fontSize=90" width="100%" />
+<img src="https://capsule-render.vercel.app/render?type=waving&color=000000&height=150&section=header&text=SUKO%20NA%20PO%20AKO&fontSize=70" width="100%" />
 
 </div>
