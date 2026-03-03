@@ -481,7 +481,7 @@ export function CreateNewWebsiteModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-     <DialogContent className="w-[98vw] max-w-[1700px] max-h-[95vh] p-0 overflow-auto">
+      <DialogContent className="w-[99vw] max-w-[99vw] sm:max-w-[11000px] max-h-[95vh] p-0 overflow-auto">
         {!showNameInput ? (
           <>
             <DialogHeader className="px-6 pt-6 pb-4 border-b">
@@ -540,7 +540,7 @@ export function CreateNewWebsiteModal({
                         <Sparkles className="w-5 h-5 text-violet-600" />
                         Recommended Template
                       </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8 mb-6">
+                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                         {recommendedTemplates.slice(0, 3).map((template) => (
                           <Card
                             key={template.id}
@@ -621,7 +621,7 @@ export function CreateNewWebsiteModal({
                     </div>
                   )}
                   {filteredTemplates.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                       {filteredTemplates.map((template) => (
                         <Card
                           key={template.id}
