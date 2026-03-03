@@ -981,7 +981,7 @@ export function Canvas({
           }
         }}
         id="canvas-area"
-        className={`w-full h-full figma-canvas-infinite overflow-auto ${isOver ? "bg-primary/5" : ""}`}
+       className={`w-full h-full figma-canvas-infinite overflow-y-auto overflow-x-hidden ${isOver ? "bg-primary/5" : ""}`}
         style={{
           backgroundColor: canvasProperties.backgroundColor,
           backgroundImage: gridPattern,
@@ -1079,6 +1079,7 @@ export function Canvas({
                 width: "1920px",
                 minHeight: "20000px",
                 height: "20000px",
+                marginInline: "auto",
                 ...canvasStyle,
               }}
             >
