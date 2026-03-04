@@ -19,6 +19,10 @@ import { Plus, Loader2 } from "lucide-react";
 // Local storage key for saving components
 const LOCAL_STORAGE_KEY = "canvas_components";
 const DESIGN_WIDTH = 1920;
+const DESIGN_HEIGHT = 20000;
+const RULER_SIZE = 20;
+const BASE_CANVAS_ZOOM = 100;
+const MAX_CANVAS_ZOOM = 200;
 
 interface CanvasProps {
   components: ComponentData[];
@@ -75,6 +79,12 @@ export function Canvas({
   pages = [{ id: "home", name: "Home", path: "/" }],
   onMoveLayer,
 }: CanvasProps) {
+  const clampedCanvasZoom = Math.min(
+    MAX_CANVAS_ZOOM,
+    Math.max(BASE_CANVAS_ZOOM, canvasZoom),
+  );
+  const displayZoom = clampedCanvasZoom - BASE_CANVAS_ZOOM;
+
   const [draggingComponent, setDraggingComponent] = useState<string | null>(
     null,
   );
@@ -84,11 +94,12 @@ export function Canvas({
   const [selectedComponents, setSelectedComponents] = useState<Set<string>>(
     new Set(),
   );
+  const [isPanningCanvas, setIsPanningCanvas] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const canvasRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const hasAutoScrolled = useRef(false);
-  const previousZoom = useRef(canvasZoom);
+  const previousScaleRef = useRef(clampedCanvasZoom / 100);
   const saveTimerRef = useRef<number | null>(null);
   const [viewportWidth, setViewportWidth] = useState(DESIGN_WIDTH);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
@@ -105,6 +116,13 @@ export function Canvas({
     gridColor: "#e5e5e5",
   });
   const dragSnapConfigRef = useRef({ snapToGrid: false, gridSize: 20 });
+  const canvasPanRef = useRef({
+    startClientX: 0,
+    startClientY: 0,
+    startScrollLeft: 0,
+    startScrollTop: 0,
+    hasMoved: false,
+  });
   const getSnapConfig = useCallback(() => {
     const prefs =
       typeof window !== "undefined"
@@ -229,11 +247,66 @@ export function Canvas({
     [getComponentWidth],
   );
 
-  const getEffectiveScale = useCallback(() => {
+  const getFitScale = useCallback(() => {
     const canvasWidth = canvasRef.current?.clientWidth ?? viewportWidth;
-    const fitScale = canvasWidth / DESIGN_WIDTH;
-    return (canvasZoom / 100) * fitScale;
-  }, [canvasZoom, viewportWidth]);
+    const rulerOffset = showRulers && !readOnly ? RULER_SIZE : 0;
+    const visibleWidth = Math.max(1, canvasWidth - rulerOffset);
+    return visibleWidth / DESIGN_WIDTH;
+  }, [viewportWidth, showRulers, readOnly]);
+
+  const getEffectiveScale = useCallback(() => {
+    return (clampedCanvasZoom / 100) * getFitScale();
+  }, [clampedCanvasZoom, getFitScale]);
+
+  const getCanvasScrollBounds = useCallback(() => {
+    if (!canvasRef.current) {
+      return { maxLeft: 0, maxTop: 0 };
+    }
+
+    const canvas = canvasRef.current;
+    const rulerOffset = showRulers && !readOnly ? RULER_SIZE : 0;
+    const viewportWidth = Math.max(1, canvas.clientWidth - rulerOffset);
+    const viewportHeight = Math.max(1, canvas.clientHeight - rulerOffset);
+    const scale = getEffectiveScale();
+    const scaledWidth = DESIGN_WIDTH * scale;
+    const scaledHeight = DESIGN_HEIGHT * scale;
+
+    return {
+      maxLeft: Math.max(0, scaledWidth - viewportWidth),
+      maxTop: Math.max(0, scaledHeight - viewportHeight),
+    };
+  }, [getEffectiveScale, readOnly, showRulers]);
+
+  const clampCanvasScroll = useCallback(
+    (left: number, top: number) => {
+      const { maxLeft, maxTop } = getCanvasScrollBounds();
+
+      return {
+        left: Math.min(maxLeft, Math.max(0, left)),
+        top: Math.min(maxTop, Math.max(0, top)),
+      };
+    },
+    [getCanvasScrollBounds],
+  );
+
+  useEffect(() => {
+    previousScaleRef.current = (clampedCanvasZoom / 100) * getFitScale();
+  }, [getFitScale]);
+
+  const setDisplayZoom = useCallback(
+    (nextDisplayZoom: number) => {
+      if (!onZoomChange) return;
+
+      const maxDisplayZoom = MAX_CANVAS_ZOOM - BASE_CANVAS_ZOOM;
+      const clampedDisplayZoom = Math.min(
+        maxDisplayZoom,
+        Math.max(0, nextDisplayZoom),
+      );
+
+      onZoomChange(BASE_CANVAS_ZOOM + clampedDisplayZoom);
+    },
+    [onZoomChange],
+  );
 
   useEffect(() => {
     setCanvasProperties((prev) => ({
@@ -798,7 +871,6 @@ export function Canvas({
     [activePageId, clampPositionToCanvasWidth, getEffectiveScale],
   );
 
-  // Auto-center canvas when components are first loaded
   React.useEffect(() => {
     if (
       components.length > 0 &&
@@ -806,12 +878,10 @@ export function Canvas({
       canvasRef.current &&
       contentRef.current
     ) {
-      // Wait for components to be rendered and positioned
       const timeoutId = setTimeout(() => {
         if (canvasRef.current && contentRef.current) {
           const canvas = canvasRef.current;
 
-          // Calculate the bounds of all components to find the center
           let minX = Number.POSITIVE_INFINITY,
             minY = Number.POSITIVE_INFINITY,
             maxX = Number.NEGATIVE_INFINITY,
@@ -834,66 +904,69 @@ export function Canvas({
             maxY = Math.max(maxY, pos.y + height);
           });
 
-          // Calculate center point of all components
           const contentCenterX = (minX + maxX) / 2;
           const contentCenterY = (minY + maxY) / 2;
 
-          // Get canvas dimensions
           const canvasWidth = canvas.clientWidth;
           const canvasHeight = canvas.clientHeight;
           const scale = getEffectiveScale();
 
-          // Calculate scroll position to center the content
           const scrollLeft = contentCenterX * scale - canvasWidth / 2;
           const scrollTop = contentCenterY * scale - canvasHeight / 2;
+          const clamped = clampCanvasScroll(scrollLeft, scrollTop);
 
           canvas.scrollTo({
-            left: Math.max(0, scrollLeft),
-            top: Math.max(0, scrollTop),
+            left: clamped.left,
+            top: clamped.top,
             behavior: "smooth",
           });
 
           hasAutoScrolled.current = true;
         }
-      }, 150); // Wait for layout
+      }, 150);
 
       return () => clearTimeout(timeoutId);
     }
 
-    // Reset auto-scroll flag when all components are removed
     if (components.length === 0) {
       hasAutoScrolled.current = false;
     }
-  }, [components, getEffectiveScale]);
+  }, [components, clampCanvasScroll, getEffectiveScale]);
 
-  // Keep content centered when zooming
   React.useEffect(() => {
-    if (canvasRef.current && previousZoom.current !== canvasZoom) {
+    if (canvasRef.current) {
       const canvas = canvasRef.current;
-      const canvasWidth = canvas.clientWidth;
-      const canvasHeight = canvas.clientHeight;
-      const fitScale = viewportWidth / DESIGN_WIDTH;
-      const previousScale = (previousZoom.current / 100) * fitScale;
-
-      // Get the center point of the viewport in canvas coordinates before zoom
-      const viewportCenterX =
-        (canvas.scrollLeft + canvasWidth / 2) / previousScale;
-      const viewportCenterY =
-        (canvas.scrollTop + canvasHeight / 2) / previousScale;
-
-      // Calculate new scroll position to keep the same center point after zoom
+      const rulerOffset = showRulers && !readOnly ? RULER_SIZE : 0;
+      const visibleWidth = Math.max(1, canvas.clientWidth - rulerOffset);
+      const visibleHeight = Math.max(1, canvas.clientHeight - rulerOffset);
+      const previousScale = previousScaleRef.current;
       const newScale = getEffectiveScale();
-      const newScrollLeft = viewportCenterX * newScale - canvasWidth / 2;
-      const newScrollTop = viewportCenterY * newScale - canvasHeight / 2;
 
-      // Apply new scroll position immediately
-      canvas.scrollLeft = Math.max(0, newScrollLeft);
-      canvas.scrollTop = Math.max(0, newScrollTop);
+      if (Math.abs(newScale - previousScale) < 0.0001) {
+        return;
+      }
 
-      // Update previous zoom
-      previousZoom.current = canvasZoom;
+      const viewportCenterX =
+        (canvas.scrollLeft + visibleWidth / 2) / previousScale;
+      const viewportCenterY =
+        (canvas.scrollTop + visibleHeight / 2) / previousScale;
+
+      const newScrollLeft = viewportCenterX * newScale - visibleWidth / 2;
+      const newScrollTop = viewportCenterY * newScale - visibleHeight / 2;
+      const clamped = clampCanvasScroll(newScrollLeft, newScrollTop);
+
+      canvas.scrollLeft = clamped.left;
+      canvas.scrollTop = clamped.top;
+
+      previousScaleRef.current = newScale;
     }
-  }, [canvasZoom, getEffectiveScale, viewportWidth]);
+  }, [
+    clampedCanvasZoom,
+    clampCanvasScroll,
+    getEffectiveScale,
+    readOnly,
+    showRulers,
+  ]);
 
   // Handle component dragging
   const handleComponentMouseDown = (
@@ -1054,6 +1127,54 @@ export function Canvas({
     setDraggingComponent(null);
   };
 
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (readOnly) return;
+    if (e.button !== 0) return;
+    if (draggingComponent) return;
+    if (!canvasRef.current) return;
+
+    if (e.target !== e.currentTarget && e.target !== contentRef.current) {
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    canvasPanRef.current = {
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startScrollLeft: canvas.scrollLeft,
+      startScrollTop: canvas.scrollTop,
+      hasMoved: false,
+    };
+
+    setIsPanningCanvas(true);
+  };
+
+  const handleCanvasPanMove = useCallback(
+    (e: MouseEvent) => {
+      if (!canvasRef.current) return;
+
+      const pan = canvasPanRef.current;
+      const deltaX = e.clientX - pan.startClientX;
+      const deltaY = e.clientY - pan.startClientY;
+
+      if (!pan.hasMoved && (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2)) {
+        pan.hasMoved = true;
+      }
+
+      const nextLeft = pan.startScrollLeft - deltaX;
+      const nextTop = pan.startScrollTop - deltaY;
+      const clamped = clampCanvasScroll(nextLeft, nextTop);
+
+      canvasRef.current.scrollLeft = clamped.left;
+      canvasRef.current.scrollTop = clamped.top;
+    },
+    [clampCanvasScroll],
+  );
+
+  const handleCanvasPanEnd = useCallback(() => {
+    setIsPanningCanvas(false);
+  }, []);
+
   React.useEffect(() => {
     if (draggingComponent) {
       document.addEventListener("mousemove", handleMouseMove);
@@ -1076,17 +1197,30 @@ export function Canvas({
     }
   }, [draggingComponent, dragOffset, getEffectiveScale]);
 
+  React.useEffect(() => {
+    if (!isPanningCanvas) return;
+
+    document.addEventListener("mousemove", handleCanvasPanMove);
+    document.addEventListener("mouseup", handleCanvasPanEnd);
+    document.body.style.cursor = "grabbing";
+    document.body.style.userSelect = "none";
+
+    return () => {
+      document.removeEventListener("mousemove", handleCanvasPanMove);
+      document.removeEventListener("mouseup", handleCanvasPanEnd);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [isPanningCanvas, handleCanvasPanMove, handleCanvasPanEnd]);
+
   // Handle wheel zoom with Ctrl/Cmd key
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
 
-      if (onZoomChange) {
-        const delta = -e.deltaY;
-        const zoomChange = delta > 0 ? 10 : -10;
-        const newZoom = Math.max(50, Math.min(200, canvasZoom + zoomChange));
-        onZoomChange(newZoom);
-      }
+      const delta = -e.deltaY;
+      const zoomChange = delta > 0 ? 10 : -10;
+      setDisplayZoom(displayZoom + zoomChange);
     }
   };
 
@@ -1162,14 +1296,11 @@ export function Canvas({
     [],
   );
 
-  // --- Ruler helpers ---
-  const RULER_SIZE = 20; // px thickness of each ruler bar
-
   const buildHRulerTicks = () => {
     if (!canvasRef.current) return [];
-    const scale = canvasZoom / 100;
+    const scale = clampedCanvasZoom / 100;
     const viewW = canvasRef.current.clientWidth;
-    // step in px at 100% zoom — keep ticks from being too dense
+
     const rawStep = 100;
     const step = rawStep * scale;
     const firstCanvasPx = Math.floor(rulerScroll.x / step) * rawStep;
@@ -1187,7 +1318,7 @@ export function Canvas({
 
   const buildVRulerTicks = () => {
     if (!canvasRef.current) return [];
-    const scale = canvasZoom / 100;
+    const scale = clampedCanvasZoom / 100;
     const viewH = canvasRef.current.clientHeight;
     const rawStep = 100;
     const step = rawStep * scale;
@@ -1323,14 +1454,25 @@ export function Canvas({
           backgroundImage: "none",
           overflowY: "auto",
           overflowX: "hidden",
+          cursor: isPanningCanvas
+            ? "grabbing"
+            : clampedCanvasZoom > BASE_CANVAS_ZOOM
+              ? "grab"
+              : "default",
           ...(showRulers && !readOnly
             ? { paddingTop: RULER_SIZE, paddingLeft: RULER_SIZE }
             : {}),
         }}
         onWheel={handleWheel}
+        onMouseDown={handleCanvasMouseDown}
         onScroll={handleCanvasScroll}
         onContextMenu={handleCanvasContextMenu}
         onClick={(e) => {
+          if (canvasPanRef.current.hasMoved) {
+            canvasPanRef.current.hasMoved = false;
+            return;
+          }
+
           if (e.target === e.currentTarget || e.target === contentRef.current) {
             onSelectComponent(null);
             setSelectedComponents(new Set());
@@ -1342,9 +1484,7 @@ export function Canvas({
         {!readOnly && (
           <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-background/90 backdrop-blur-sm border border-border rounded-lg shadow-lg px-2 py-1.5 z-50">
             <button
-              onClick={() =>
-                onZoomChange && onZoomChange(Math.max(50, canvasZoom - 10))
-              }
+              onClick={() => setDisplayZoom(displayZoom - 10)}
               className="p-1 hover:bg-accent rounded transition-colors"
               title="Zoom Out"
             >
@@ -1363,12 +1503,10 @@ export function Canvas({
               </svg>
             </button>
             <span className="text-xs font-medium text-muted-foreground min-w-12 text-center">
-              {canvasZoom}%
+              {displayZoom}%
             </span>
             <button
-              onClick={() =>
-                onZoomChange && onZoomChange(Math.min(200, canvasZoom + 10))
-              }
+              onClick={() => setDisplayZoom(displayZoom + 10)}
               className="p-1 hover:bg-accent rounded transition-colors"
               title="Zoom In"
             >
@@ -1388,7 +1526,7 @@ export function Canvas({
             </button>
             <div className="w-px h-4 bg-border mx-0.5" />
             <button
-              onClick={() => onZoomChange && onZoomChange(100)}
+              onClick={() => setDisplayZoom(0)}
               className="px-1.5 py-0.5 hover:bg-accent rounded transition-colors text-xs"
               title="Reset Zoom"
             >
@@ -1417,7 +1555,7 @@ export function Canvas({
                 minWidth: `${DESIGN_WIDTH}px`,
                 width: `${DESIGN_WIDTH}px`,
                 minHeight: "1080px",
-                height: "20000px",
+                height: `${DESIGN_HEIGHT}px`,
                 marginInline: "0",
                 boxSizing: "border-box",
                 ...canvasStyle,
