@@ -179,8 +179,9 @@ function parseCSSToStyleUpdates(
       const value = t.slice(ci + 1).trim()
       if (!prop || !value) continue
       const camel = prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-      const num = parseFloat(value)
-      style[camel] = !isNaN(num) && value.endsWith("px") ? num : value
+      // Keep the raw string value — do NOT strip px or convert to number.
+      // PropertiesPanel expects strings like "16px", not numbers like 16.
+      style[camel] = value
     }
     if (Object.keys(style).length > 0) updates.set(sanitizedId, style)
   }
@@ -206,25 +207,56 @@ function stripTags(html: string): string {
   return html.replace(/<[^>]+>/g, "")
 }
 
+// Normalize style values — PropertiesPanel expects all style values to be strings.
+// Numeric values (e.g. fontSize: 16) must be converted back to "16px" strings
+// for px-based properties, or plain strings for unitless ones.
+const UNITLESS_PROPS = new Set([
+  "opacity", "zIndex", "fontWeight", "lineHeight", "flex", "order",
+  "flexGrow", "flexShrink", "columnCount", "animationIterationCount",
+])
+
+function normalizeStyleValues(style: Record<string, any> = {}): Record<string, any> {
+  const result: Record<string, any> = {}
+  for (const [key, value] of Object.entries(style)) {
+    if (typeof value === "number") {
+      // Unitless props stay as numbers, px-based ones become "Npx" strings
+      result[key] = UNITLESS_PROPS.has(key) ? value : `${value}px`
+    } else {
+      result[key] = value
+    }
+  }
+  return result
+}
+
 function applyUpdatesToComponents(
   components: ComponentData[],
   phpUpdates: Map<string, Partial<ComponentData>>,
   cssUpdates: Map<string, Record<string, any>>
 ): ComponentData[] {
   return components.map((comp) => {
-    // Use sanitized ID to match — same transform the generator uses
     const sid = sanitizeId(comp.id)
     const pu = phpUpdates.get(sid)
     const cu = cssUpdates.get(sid)
-    if (!pu && !cu) return comp
+
+    // Always normalize existing style values to strings — fixes any numeric
+    // fontSize/width/etc that was stored from a previous save.
+    const normalizedExistingStyle = normalizeStyleValues(comp.style)
+
+    if (!pu && !cu) {
+      // No code changes for this component, but still normalize its style
+      if (JSON.stringify(normalizedExistingStyle) === JSON.stringify(comp.style)) {
+        return comp // nothing changed, avoid unnecessary re-render
+      }
+      return { ...comp, style: normalizedExistingStyle }
+    }
 
     const patchedProps = pu?.props
       ? { ...comp.props, ...pu.props }
       : comp.props
 
     const patchedStyle = cu
-      ? { ...comp.style, ...cu }
-      : comp.style
+      ? normalizeStyleValues({ ...normalizedExistingStyle, ...cu })
+      : normalizedExistingStyle
 
     return {
       ...comp,
