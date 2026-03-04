@@ -18,6 +18,7 @@ import { Plus, Loader2 } from "lucide-react";
 
 // Local storage key for saving components
 const LOCAL_STORAGE_KEY = "canvas_components";
+const DESIGN_WIDTH = 1920;
 
 interface CanvasProps {
   components: ComponentData[];
@@ -89,6 +90,7 @@ export function Canvas({
   const hasAutoScrolled = useRef(false);
   const previousZoom = useRef(canvasZoom);
   const saveTimerRef = useRef<number | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(DESIGN_WIDTH);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [editTextPosition, setEditTextPosition] = useState({ x: 0, y: 0 });
   const [editTextValue, setEditTextValue] = useState("");
@@ -104,21 +106,29 @@ export function Canvas({
   });
   const dragSnapConfigRef = useRef({ snapToGrid: false, gridSize: 20 });
   const getSnapConfig = useCallback(() => {
-    const prefs = typeof window !== 'undefined' ? localStorage.getItem('codecraft-preferences') : null;
+    const prefs =
+      typeof window !== "undefined"
+        ? localStorage.getItem("codecraft-preferences")
+        : null;
     if (prefs) {
       try {
         const parsed = JSON.parse(prefs);
-        return { snapToGrid: !!parsed.snapToGrid, gridSize: parsed.gridSize || 20 };
-      } catch (e) { }
+        return {
+          snapToGrid: !!parsed.snapToGrid,
+          gridSize: parsed.gridSize || 20,
+        };
+      } catch (e) {}
     }
     return { snapToGrid: false, gridSize: 20 };
   }, []);
 
   const [showRulers, setShowRulers] = useState(() => {
     try {
-      const prefs = localStorage.getItem('codecraft-preferences');
+      const prefs = localStorage.getItem("codecraft-preferences");
       return prefs ? !!JSON.parse(prefs).showRulers : false;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   });
   const [rulerScroll, setRulerScroll] = useState({ x: 0, y: 0 });
 
@@ -130,16 +140,100 @@ export function Canvas({
   useEffect(() => {
     const onPrefsUpdated = () => {
       try {
-        const prefs = localStorage.getItem('codecraft-preferences');
+        const prefs = localStorage.getItem("codecraft-preferences");
         if (prefs) setShowRulers(!!JSON.parse(prefs).showRulers);
-      } catch { }
+      } catch {}
     };
-    window.addEventListener('preferencesUpdated', onPrefsUpdated);
-    return () => window.removeEventListener('preferencesUpdated', onPrefsUpdated);
+    window.addEventListener("preferencesUpdated", onPrefsUpdated);
+    return () =>
+      window.removeEventListener("preferencesUpdated", onPrefsUpdated);
   }, []);
 
   const generateId = () =>
     `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  const getComponentWidth = useCallback(
+    (component?: Partial<ComponentData>) => {
+      const rawWidth = component?.style?.width;
+      const parsedWidth =
+        typeof rawWidth === "number"
+          ? rawWidth
+          : Number.parseFloat(String(rawWidth ?? ""));
+
+      return Number.isFinite(parsedWidth) && parsedWidth > 0
+        ? parsedWidth
+        : 200;
+    },
+    [],
+  );
+
+  const clampPositionToCanvasWidth = useCallback(
+    (
+      position: { x: number; y: number },
+      component?: Partial<ComponentData>,
+    ) => {
+      const componentWidth = getComponentWidth(component);
+      const maxX = Math.max(0, DESIGN_WIDTH - componentWidth);
+
+      return {
+        ...position,
+        x: Math.min(maxX, Math.max(0, position.x)),
+      };
+    },
+    [getComponentWidth],
+  );
+
+  const constrainUpdatesToCanvasWidth = useCallback(
+    (component: ComponentData, updates: Partial<ComponentData>) => {
+      const nextUpdates: Partial<ComponentData> = { ...updates };
+      const nextStyle = {
+        ...(component.style || {}),
+        ...(updates.style || {}),
+      };
+
+      const currentPosition = updates.position ||
+        component.position || { x: 0, y: 0 };
+      const componentWidth = getComponentWidth({ style: nextStyle });
+      const maxX = Math.max(0, DESIGN_WIDTH - componentWidth);
+      const clampedX = Math.min(maxX, Math.max(0, currentPosition.x));
+
+      if (updates.position) {
+        nextUpdates.position = {
+          ...updates.position,
+          x: clampedX,
+        };
+      }
+
+      if (updates.style?.width !== undefined) {
+        const maxWidth = Math.max(0, DESIGN_WIDTH - clampedX);
+        const clampedWidth = Math.min(componentWidth, maxWidth);
+
+        nextUpdates.style = {
+          ...(updates.style || {}),
+          width:
+            typeof updates.style.width === "number"
+              ? clampedWidth
+              : `${clampedWidth}px`,
+        };
+
+        if (!updates.position && clampedX !== currentPosition.x) {
+          nextUpdates.position = {
+            ...(component.position || { x: 0, y: 0 }),
+            x: clampedX,
+          };
+        }
+      }
+
+      return nextUpdates;
+    },
+    [getComponentWidth],
+  );
+
+  const getEffectiveScale = useCallback(() => {
+    const canvasWidth = canvasRef.current?.clientWidth ?? viewportWidth;
+    const fitScale = canvasWidth / DESIGN_WIDTH;
+    return (canvasZoom / 100) * fitScale;
+  }, [canvasZoom, viewportWidth]);
 
   useEffect(() => {
     setCanvasProperties((prev) => ({
@@ -148,6 +242,21 @@ export function Canvas({
       showGrid: showGrid,
     }));
   }, [backgroundColor, showGrid]);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? DESIGN_WIDTH;
+      setViewportWidth(width);
+    });
+
+    resizeObserver.observe(canvasRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   // Clear selection when changing pages
   useEffect(() => {
@@ -238,6 +347,11 @@ export function Canvas({
         page_id: activePageId,
       };
 
+      newComponent.position = clampPositionToCanvasWidth(
+        newComponent.position,
+        newComponent,
+      );
+
       const execute = () => {
         const event = new CustomEvent("addComponent", { detail: newComponent });
         window.dispatchEvent(event);
@@ -255,7 +369,13 @@ export function Canvas({
       addToHistory(command);
       execute();
     }
-  }, [clipboard, addToHistory, onSelectComponent, activePageId]);
+  }, [
+    clipboard,
+    addToHistory,
+    onSelectComponent,
+    activePageId,
+    clampPositionToCanvasWidth,
+  ]);
 
   // Group selected components
   const groupSelectedComponents = useCallback(() => {
@@ -459,7 +579,12 @@ export function Canvas({
             break;
         }
 
-        onUpdateComponent(selectedComponent.id, { position: newPos });
+        const clampedPosition = clampPositionToCanvasWidth(
+          newPos,
+          selectedComponent,
+        );
+
+        onUpdateComponent(selectedComponent.id, { position: clampedPosition });
         return;
       }
 
@@ -514,6 +639,7 @@ export function Canvas({
       redo,
       groupSelectedComponents,
       ungroupSelected,
+      clampPositionToCanvasWidth,
     ],
   );
 
@@ -617,53 +743,60 @@ export function Canvas({
 
   // Load components from localStorage on initial render
 
-  const [{ isOver }, drop] = useDrop({
-    accept: "component",
-    drop: (
-      item: {
-        type: string;
-        props: Record<string, any>;
-        style?: Record<string, any>;
-      },
-      monitor,
-    ) => {
-      const offset = monitor.getClientOffset();
-      if (offset && canvasRef.current && contentRef.current) {
-        const canvasRect = canvasRef.current.getBoundingClientRect();
-        const contentRect = contentRef.current.getBoundingClientRect();
+  const [{ isOver }, drop] = useDrop(
+    {
+      accept: "component",
+      drop: (
+        item: {
+          type: string;
+          props: Record<string, any>;
+          style?: Record<string, any>;
+        },
+        monitor,
+      ) => {
+        const offset = monitor.getClientOffset();
+        if (offset && canvasRef.current && contentRef.current) {
+          const canvasRect = canvasRef.current.getBoundingClientRect();
 
-        // Calculate position relative to the content area, accounting for zoom and scroll
-        const scale = canvasZoom / 100;
-        const scrollLeft = canvasRef.current.scrollLeft;
-        const scrollTop = canvasRef.current.scrollTop;
+          // Calculate position relative to the content area, accounting for zoom and scroll
+          const scale = getEffectiveScale();
+          const scrollLeft = canvasRef.current.scrollLeft;
+          const scrollTop = canvasRef.current.scrollTop;
 
-        // Calculate the actual position in the canvas coordinate system
-        let x = (offset.x - canvasRect.left + scrollLeft) / scale;
-        let y = (offset.y - canvasRect.top + scrollTop) / scale;
+          // Calculate the actual position in the canvas coordinate system
+          let x = (offset.x - canvasRect.left + scrollLeft) / scale;
+          let y = (offset.y - canvasRect.top + scrollTop) / scale;
 
-        const snapConfig = getSnapConfig();
-        if (snapConfig.snapToGrid) {
-          x = Math.round(x / snapConfig.gridSize) * snapConfig.gridSize;
-          y = Math.round(y / snapConfig.gridSize) * snapConfig.gridSize;
+          const snapConfig = getSnapConfig();
+          if (snapConfig.snapToGrid) {
+            x = Math.round(x / snapConfig.gridSize) * snapConfig.gridSize;
+            y = Math.round(y / snapConfig.gridSize) * snapConfig.gridSize;
+          }
+
+          const newComponent: ComponentData = {
+            id: generateId(),
+            type: item.type,
+            props: item.props,
+            style: item.style || {},
+            position: clampPositionToCanvasWidth(
+              { x, y },
+              { style: item.style },
+            ),
+            page_id: activePageId,
+          };
+
+          const event = new CustomEvent("addComponent", {
+            detail: newComponent,
+          });
+          window.dispatchEvent(event);
         }
-
-        const newComponent: ComponentData = {
-          id: generateId(),
-          type: item.type,
-          props: item.props,
-          style: item.style || {},
-          position: { x, y },
-          page_id: activePageId,
-        };
-
-        const event = new CustomEvent("addComponent", { detail: newComponent });
-        window.dispatchEvent(event);
-      }
+      },
+      collect: (monitor) => ({
+        isOver: monitor.isOver(),
+      }),
     },
-    collect: (monitor) => ({
-      isOver: monitor.isOver(),
-    }),
-  });
+    [activePageId, clampPositionToCanvasWidth, getEffectiveScale],
+  );
 
   // Auto-center canvas when components are first loaded
   React.useEffect(() => {
@@ -708,7 +841,7 @@ export function Canvas({
           // Get canvas dimensions
           const canvasWidth = canvas.clientWidth;
           const canvasHeight = canvas.clientHeight;
-          const scale = canvasZoom / 100;
+          const scale = getEffectiveScale();
 
           // Calculate scroll position to center the content
           const scrollLeft = contentCenterX * scale - canvasWidth / 2;
@@ -731,7 +864,7 @@ export function Canvas({
     if (components.length === 0) {
       hasAutoScrolled.current = false;
     }
-  }, [components.length, canvasZoom]);
+  }, [components, getEffectiveScale]);
 
   // Keep content centered when zooming
   React.useEffect(() => {
@@ -739,15 +872,17 @@ export function Canvas({
       const canvas = canvasRef.current;
       const canvasWidth = canvas.clientWidth;
       const canvasHeight = canvas.clientHeight;
+      const fitScale = viewportWidth / DESIGN_WIDTH;
+      const previousScale = (previousZoom.current / 100) * fitScale;
 
       // Get the center point of the viewport in canvas coordinates before zoom
       const viewportCenterX =
-        (canvas.scrollLeft + canvasWidth / 2) / (previousZoom.current / 100);
+        (canvas.scrollLeft + canvasWidth / 2) / previousScale;
       const viewportCenterY =
-        (canvas.scrollTop + canvasHeight / 2) / (previousZoom.current / 100);
+        (canvas.scrollTop + canvasHeight / 2) / previousScale;
 
       // Calculate new scroll position to keep the same center point after zoom
-      const newScale = canvasZoom / 100;
+      const newScale = getEffectiveScale();
       const newScrollLeft = viewportCenterX * newScale - canvasWidth / 2;
       const newScrollTop = viewportCenterY * newScale - canvasHeight / 2;
 
@@ -758,7 +893,7 @@ export function Canvas({
       // Update previous zoom
       previousZoom.current = canvasZoom;
     }
-  }, [canvasZoom]);
+  }, [canvasZoom, getEffectiveScale, viewportWidth]);
 
   // Handle component dragging
   const handleComponentMouseDown = (
@@ -783,7 +918,7 @@ export function Canvas({
 
     if (canvasRef.current && contentRef.current) {
       const canvasRect = canvasRef.current.getBoundingClientRect();
-      const scale = canvasZoom / 100;
+      const scale = getEffectiveScale();
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
@@ -818,7 +953,7 @@ export function Canvas({
 
     if (canvasRef.current) {
       const canvasRect = canvasRef.current.getBoundingClientRect();
-      const scale = canvasZoom / 100;
+      const scale = getEffectiveScale();
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
@@ -839,12 +974,14 @@ export function Canvas({
       const component = componentsRef.current.find((c) => c.id === id);
       if (!component) return;
 
+      const nextUpdates = constrainUpdatesToCanvasWidth(component, updates);
+
       // Save the previous state for undo
       const previousState = { ...component };
 
       // Create the update command
       const execute = () => {
-        onUpdateComponent(id, updates);
+        onUpdateComponent(id, nextUpdates);
       };
 
       const undo = () => {
@@ -852,13 +989,13 @@ export function Canvas({
       };
 
       // Only add to history if this is a position update (to avoid cluttering history with intermediate states)
-      if (updates.position) {
+      if (nextUpdates.position) {
         addToHistory({ execute, undo });
       }
 
       execute();
     },
-    [addToHistory, onUpdateComponent],
+    [addToHistory, constrainUpdatesToCanvasWidth, onUpdateComponent],
   );
 
   const handleTouchMove = (e: TouchEvent) => {
@@ -866,7 +1003,7 @@ export function Canvas({
       e.preventDefault();
       const touch = e.touches[0];
       const canvasRect = canvasRef.current.getBoundingClientRect();
-      const scale = canvasZoom / 100;
+      const scale = getEffectiveScale();
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
@@ -894,12 +1031,11 @@ export function Canvas({
   const handleMouseMove = (e: MouseEvent) => {
     if (draggingComponent && canvasRef.current) {
       const canvasRect = canvasRef.current.getBoundingClientRect();
-      const scale = canvasZoom / 100;
+      const scale = getEffectiveScale();
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
-      let x =
-        (e.clientX - canvasRect.left + scrollLeft) / scale - dragOffset.x;
+      let x = (e.clientX - canvasRect.left + scrollLeft) / scale - dragOffset.x;
       let y = (e.clientY - canvasRect.top + scrollTop) / scale - dragOffset.y;
 
       if (dragSnapConfigRef.current.snapToGrid) {
@@ -938,7 +1074,7 @@ export function Canvas({
         document.body.style.userSelect = "";
       };
     }
-  }, [draggingComponent, dragOffset, canvasZoom]);
+  }, [draggingComponent, dragOffset, getEffectiveScale]);
 
   // Handle wheel zoom with Ctrl/Cmd key
   const handleWheel = (e: React.WheelEvent) => {
@@ -1038,7 +1174,11 @@ export function Canvas({
     const step = rawStep * scale;
     const firstCanvasPx = Math.floor(rulerScroll.x / step) * rawStep;
     const ticks: { label: string; x: number }[] = [];
-    for (let cx = firstCanvasPx; cx * scale - rulerScroll.x < viewW + step; cx += rawStep) {
+    for (
+      let cx = firstCanvasPx;
+      cx * scale - rulerScroll.x < viewW + step;
+      cx += rawStep
+    ) {
       const screenX = cx * scale - rulerScroll.x + RULER_SIZE;
       ticks.push({ label: String(cx), x: screenX });
     }
@@ -1053,7 +1193,11 @@ export function Canvas({
     const step = rawStep * scale;
     const firstCanvasPx = Math.floor(rulerScroll.y / step) * rawStep;
     const ticks: { label: string; y: number }[] = [];
-    for (let cy = firstCanvasPx; cy * scale - rulerScroll.y < viewH + step; cy += rawStep) {
+    for (
+      let cy = firstCanvasPx;
+      cy * scale - rulerScroll.y < viewH + step;
+      cy += rawStep
+    ) {
       const screenY = cy * scale - rulerScroll.y + RULER_SIZE;
       ticks.push({ label: String(cy), y: screenY });
     }
@@ -1062,30 +1206,44 @@ export function Canvas({
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-slate-900 relative overflow-hidden">
-
       {/* ── Rulers ──*/}
       {showRulers && !readOnly && (
         <>
           {/* Top horizontal ruler */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               top: 0,
               left: RULER_SIZE,
               right: 0,
               height: RULER_SIZE,
               zIndex: 10,
-              background: 'var(--card, #1e1e2e)',
-              borderBottom: '1px solid var(--border, #333)',
-              overflow: 'hidden',
-              pointerEvents: 'none',
+              background: "var(--card, #1e1e2e)",
+              borderBottom: "1px solid var(--border, #333)",
+              overflow: "hidden",
+              pointerEvents: "none",
             }}
           >
-            <svg width="100%" height={RULER_SIZE} style={{ display: 'block' }}>
+            <svg width="100%" height={RULER_SIZE} style={{ display: "block" }}>
               {buildHRulerTicks().map(({ label, x }) => (
                 <g key={label}>
-                  <line x1={x} y1={RULER_SIZE} x2={x} y2={RULER_SIZE - 8} stroke="var(--muted-foreground,#888)" strokeWidth={1} />
-                  <text x={x + 2} y={RULER_SIZE - 10} fontSize={8} fill="var(--muted-foreground,#888)" fontFamily="monospace">{label}</text>
+                  <line
+                    x1={x}
+                    y1={RULER_SIZE}
+                    x2={x}
+                    y2={RULER_SIZE - 8}
+                    stroke="var(--muted-foreground,#888)"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={x + 2}
+                    y={RULER_SIZE - 10}
+                    fontSize={8}
+                    fill="var(--muted-foreground,#888)"
+                    fontFamily="monospace"
+                  >
+                    {label}
+                  </text>
                 </g>
               ))}
             </svg>
@@ -1094,22 +1252,29 @@ export function Canvas({
           {/* Left vertical ruler */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               top: RULER_SIZE,
               left: 0,
               bottom: 0,
               width: RULER_SIZE,
               zIndex: 10,
-              background: 'var(--card, #1e1e2e)',
-              borderRight: '1px solid var(--border, #333)',
-              overflow: 'hidden',
-              pointerEvents: 'none',
+              background: "var(--card, #1e1e2e)",
+              borderRight: "1px solid var(--border, #333)",
+              overflow: "hidden",
+              pointerEvents: "none",
             }}
           >
-            <svg width={RULER_SIZE} height="100%" style={{ display: 'block' }}>
+            <svg width={RULER_SIZE} height="100%" style={{ display: "block" }}>
               {buildVRulerTicks().map(({ label, y }) => (
                 <g key={label}>
-                  <line x1={RULER_SIZE} y1={y} x2={RULER_SIZE - 8} y2={y} stroke="var(--muted-foreground,#888)" strokeWidth={1} />
+                  <line
+                    x1={RULER_SIZE}
+                    y1={y}
+                    x2={RULER_SIZE - 8}
+                    y2={y}
+                    stroke="var(--muted-foreground,#888)"
+                    strokeWidth={1}
+                  />
                   <text
                     x={RULER_SIZE - 10}
                     y={y - 2}
@@ -1117,7 +1282,9 @@ export function Canvas({
                     fill="var(--muted-foreground,#888)"
                     fontFamily="monospace"
                     transform={`rotate(-90, ${RULER_SIZE - 10}, ${y - 2})`}
-                  >{label}</text>
+                  >
+                    {label}
+                  </text>
                 </g>
               ))}
             </svg>
@@ -1126,21 +1293,20 @@ export function Canvas({
           {/* Corner square */}
           <div
             style={{
-              position: 'absolute',
+              position: "absolute",
               top: 0,
               left: 0,
               width: RULER_SIZE,
               height: RULER_SIZE,
               zIndex: 11,
-              background: 'var(--card, #1e1e2e)',
-              borderRight: '1px solid var(--border, #333)',
-              borderBottom: '1px solid var(--border, #333)',
-              pointerEvents: 'none',
+              background: "var(--card, #1e1e2e)",
+              borderRight: "1px solid var(--border, #333)",
+              borderBottom: "1px solid var(--border, #333)",
+              pointerEvents: "none",
             }}
           />
         </>
-      )
-      }
+      )}
 
       {/* Canvas area */}
       <div
@@ -1154,10 +1320,12 @@ export function Canvas({
         className={`w-full h-full figma-canvas-infinite overflow-y-auto overflow-x-hidden ${isOver ? "bg-primary/5" : ""}`}
         style={{
           backgroundColor: canvasProperties.backgroundColor,
-          backgroundImage: gridPattern,
-          backgroundSize: `${canvasProperties.gridSize}px ${canvasProperties.gridSize}px`,
-          backgroundPosition: "0 0",
-          ...(showRulers && !readOnly ? { paddingTop: RULER_SIZE, paddingLeft: RULER_SIZE } : {}),
+          backgroundImage: "none",
+          overflowY: "auto",
+          overflowX: "hidden",
+          ...(showRulers && !readOnly
+            ? { paddingTop: RULER_SIZE, paddingLeft: RULER_SIZE }
+            : {}),
         }}
         onWheel={handleWheel}
         onScroll={handleCanvasScroll}
@@ -1170,7 +1338,6 @@ export function Canvas({
           }
         }}
       >
-
         {/* Zoom Controls - Hide in Read Only */}
         {!readOnly && (
           <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-background/90 backdrop-blur-sm border border-border rounded-lg shadow-lg px-2 py-1.5 z-50">
@@ -1243,15 +1410,16 @@ export function Canvas({
           return (
             <div
               ref={contentRef}
-              className="relative"
+              className="relative border border-border"
               style={{
-                transform: `scale(${canvasZoom / 100})`,
+                transform: `scale(${getEffectiveScale()})`,
                 transformOrigin: "top left",
-                minWidth: "1920px",
-                width: "1920px",
-                minHeight: "20000px",
+                minWidth: `${DESIGN_WIDTH}px`,
+                width: `${DESIGN_WIDTH}px`,
+                minHeight: "1080px",
                 height: "20000px",
-                marginInline: "auto",
+                marginInline: "0",
+                boxSizing: "border-box",
                 ...canvasStyle,
               }}
             >
@@ -1308,12 +1476,13 @@ export function Canvas({
                       <div
                         key={component.id}
                         data-component-id={component.id}
-                        className={`absolute transition-shadow duration-200 ${isSelected
-                          ? "z-50 ring-2 ring-primary shadow-2xl"
-                          : isDragging
-                            ? "z-40"
-                            : "z-auto"
-                          } ${isDragging ? "cursor-grabbing" : readOnly ? "cursor-default" : "cursor-grab"}`}
+                        className={`absolute transition-shadow duration-200 ${
+                          isSelected
+                            ? "z-50 ring-2 ring-primary shadow-2xl"
+                            : isDragging
+                              ? "z-40"
+                              : "z-auto"
+                        } ${isDragging ? "cursor-grabbing" : readOnly ? "cursor-default" : "cursor-grab"}`}
                         style={{
                           left: `${position.x}px`,
                           top: `${position.y}px`,
@@ -1334,34 +1503,34 @@ export function Canvas({
                         onClick={
                           !readOnly
                             ? (e) => {
-                              e.stopPropagation();
+                                e.stopPropagation();
 
-                              if (e.ctrlKey || e.metaKey) {
-                                // Multi-select with Ctrl/Cmd key
-                                const newSelection = new Set(
-                                  selectedComponents,
-                                );
-                                if (newSelection.has(component.id)) {
-                                  newSelection.delete(component.id);
+                                if (e.ctrlKey || e.metaKey) {
+                                  // Multi-select with Ctrl/Cmd key
+                                  const newSelection = new Set(
+                                    selectedComponents,
+                                  );
+                                  if (newSelection.has(component.id)) {
+                                    newSelection.delete(component.id);
+                                  } else {
+                                    newSelection.add(component.id);
+                                  }
+                                  setSelectedComponents(newSelection);
                                 } else {
-                                  newSelection.add(component.id);
+                                  // Single select
+                                  setSelectedComponents(
+                                    new Set([component.id]),
+                                  );
                                 }
-                                setSelectedComponents(newSelection);
-                              } else {
-                                // Single select
-                                setSelectedComponents(
-                                  new Set([component.id]),
-                                );
+                                onSelectComponent(component);
                               }
-                              onSelectComponent(component);
-                            }
                             : undefined
                         }
                         onContextMenu={
                           !readOnly
                             ? (e) => {
-                              handleComponentContextMenu(e, component);
-                            }
+                                handleComponentContextMenu(e, component);
+                              }
                             : undefined
                         }
                         onDoubleClick={
@@ -1375,14 +1544,32 @@ export function Canvas({
                           isSelected={readOnly ? false : isSelected}
                           onUpdate={
                             !readOnly
-                              ? (updates) =>
-                                onUpdateComponent(component.id, updates)
-                              : () => { }
+                              ? (updates) => {
+                                  if (
+                                    !updates.position &&
+                                    updates.style?.width === undefined
+                                  ) {
+                                    onUpdateComponent(component.id, updates);
+                                    return;
+                                  }
+
+                                  const constrainedUpdates =
+                                    constrainUpdatesToCanvasWidth(
+                                      component,
+                                      updates,
+                                    );
+
+                                  onUpdateComponent(
+                                    component.id,
+                                    constrainedUpdates,
+                                  );
+                                }
+                              : () => {}
                           }
                           onDelete={
                             !readOnly
                               ? () => onDeleteComponent(component.id)
-                              : () => { }
+                              : () => {}
                           }
                           editingComponentId={readOnly ? null : editingTextId}
                           onEditComponent={setEditingTextId}
@@ -1426,29 +1613,27 @@ export function Canvas({
       </div>
 
       {/* Canvas Context Menu - Hide in Read Only */}
-      {
-        !readOnly && (
-          <CanvasContextMenu
-            position={contextMenu}
-            onClose={() => setContextMenu(null)}
-            onDuplicate={handleDuplicate}
-            onDelete={handleDelete}
-            onGroup={groupSelectedComponents}
-            onUngroup={ungroupSelected}
-            onBringToFront={bringToFront}
-            onSendToBack={sendToBack}
-            onMoveForward={() =>
-              selectedComponent && onMoveLayer(selectedComponent.id, "forward")
-            }
-            onMoveBackward={() =>
-              selectedComponent && onMoveLayer(selectedComponent.id, "backward")
-            }
-            onCopy={() => copyToClipboard()}
-            canGroup={selectedComponents.size > 1}
-            canUngroup={selectedComponent?.type === "group"}
-          />
-        )
-      }
-    </div >
+      {!readOnly && (
+        <CanvasContextMenu
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onDuplicate={handleDuplicate}
+          onDelete={handleDelete}
+          onGroup={groupSelectedComponents}
+          onUngroup={ungroupSelected}
+          onBringToFront={bringToFront}
+          onSendToBack={sendToBack}
+          onMoveForward={() =>
+            selectedComponent && onMoveLayer(selectedComponent.id, "forward")
+          }
+          onMoveBackward={() =>
+            selectedComponent && onMoveLayer(selectedComponent.id, "backward")
+          }
+          onCopy={() => copyToClipboard()}
+          canGroup={selectedComponents.size > 1}
+          canUngroup={selectedComponent?.type === "group"}
+        />
+      )}
+    </div>
   );
 }
