@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -33,8 +33,40 @@ export function PreferencesModal({ isOpen, onClose }: PreferencesModalProps) {
   const [fontSize, setFontSize] = useState(14);
   const [tabSize, setTabSize] = useState(2);
 
+  useEffect(() => {
+    if (isOpen) {
+      const saved = localStorage.getItem('codecraft-preferences');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.autoSave !== undefined) setAutoSave(parsed.autoSave);
+          if (parsed.autoSaveInterval !== undefined) setAutoSaveInterval(parsed.autoSaveInterval);
+          if (parsed.showGrid !== undefined) setShowGrid(parsed.showGrid);
+          if (parsed.snapToGrid !== undefined) setSnapToGrid(parsed.snapToGrid);
+          if (parsed.gridSize !== undefined) setGridSize(parsed.gridSize);
+          if (parsed.showRulers !== undefined) setShowRulers(parsed.showRulers);
+          if (parsed.defaultZoom !== undefined) setDefaultZoom(parsed.defaultZoom);
+          if (parsed.enableAnimations !== undefined) setEnableAnimations(parsed.enableAnimations);
+          if (parsed.compactMode !== undefined) setCompactMode(parsed.compactMode);
+          if (parsed.showLineNumbers !== undefined) setShowLineNumbers(parsed.showLineNumbers);
+          if (parsed.wordWrap !== undefined) setWordWrap(parsed.wordWrap);
+          if (parsed.fontSize !== undefined) setFontSize(parsed.fontSize);
+          if (parsed.tabSize !== undefined) setTabSize(parsed.tabSize);
+        } catch (e) {
+          console.error('Failed to parse preferences', e);
+        }
+      }
+    }
+  }, [isOpen]);
+
+
+  const handleClose = () => {
+    onClose();
+    window.location.reload();
+  };
+
   const handleSave = () => {
-    // Save preferences to localStorage
+    // Persist preferences before the reload so they survive.
     const preferences = {
       autoSave,
       autoSaveInterval,
@@ -51,7 +83,9 @@ export function PreferencesModal({ isOpen, onClose }: PreferencesModalProps) {
       tabSize,
     };
     localStorage.setItem('codecraft-preferences', JSON.stringify(preferences));
-    onClose();
+    window.dispatchEvent(new CustomEvent('preferencesUpdated'));
+
+    handleClose();
   };
 
   const handleReset = () => {
@@ -72,7 +106,7 @@ export function PreferencesModal({ isOpen, onClose }: PreferencesModalProps) {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Preferences</DialogTitle>
@@ -293,7 +327,7 @@ export function PreferencesModal({ isOpen, onClose }: PreferencesModalProps) {
             Reset to Defaults
           </Button>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>
             <Button onClick={handleSave}>

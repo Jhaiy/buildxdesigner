@@ -102,6 +102,42 @@ export function Canvas({
     gridSize: 20,
     gridColor: "#e5e5e5",
   });
+  const dragSnapConfigRef = useRef({ snapToGrid: false, gridSize: 20 });
+  const getSnapConfig = useCallback(() => {
+    const prefs = typeof window !== 'undefined' ? localStorage.getItem('codecraft-preferences') : null;
+    if (prefs) {
+      try {
+        const parsed = JSON.parse(prefs);
+        return { snapToGrid: !!parsed.snapToGrid, gridSize: parsed.gridSize || 20 };
+      } catch (e) { }
+    }
+    return { snapToGrid: false, gridSize: 20 };
+  }, []);
+
+  const [showRulers, setShowRulers] = useState(() => {
+    try {
+      const prefs = localStorage.getItem('codecraft-preferences');
+      return prefs ? !!JSON.parse(prefs).showRulers : false;
+    } catch { return false; }
+  });
+  const [rulerScroll, setRulerScroll] = useState({ x: 0, y: 0 });
+
+  const handleCanvasScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    setRulerScroll({ x: el.scrollLeft, y: el.scrollTop });
+  }, []);
+
+  useEffect(() => {
+    const onPrefsUpdated = () => {
+      try {
+        const prefs = localStorage.getItem('codecraft-preferences');
+        if (prefs) setShowRulers(!!JSON.parse(prefs).showRulers);
+      } catch { }
+    };
+    window.addEventListener('preferencesUpdated', onPrefsUpdated);
+    return () => window.removeEventListener('preferencesUpdated', onPrefsUpdated);
+  }, []);
+
   const generateId = () =>
     `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -602,8 +638,14 @@ export function Canvas({
         const scrollTop = canvasRef.current.scrollTop;
 
         // Calculate the actual position in the canvas coordinate system
-        const x = (offset.x - canvasRect.left + scrollLeft) / scale;
-        const y = (offset.y - canvasRect.top + scrollTop) / scale;
+        let x = (offset.x - canvasRect.left + scrollLeft) / scale;
+        let y = (offset.y - canvasRect.top + scrollTop) / scale;
+
+        const snapConfig = getSnapConfig();
+        if (snapConfig.snapToGrid) {
+          x = Math.round(x / snapConfig.gridSize) * snapConfig.gridSize;
+          y = Math.round(y / snapConfig.gridSize) * snapConfig.gridSize;
+        }
 
         const newComponent: ComponentData = {
           id: generateId(),
@@ -751,6 +793,7 @@ export function Canvas({
       const x = mouseCanvasX - (component.position?.x || 0);
       const y = mouseCanvasY - (component.position?.y || 0);
       setDragOffset({ x, y });
+      dragSnapConfigRef.current = getSnapConfig();
     }
   };
 
@@ -786,6 +829,7 @@ export function Canvas({
       const x = touchCanvasX - (component.position?.x || 0);
       const y = touchCanvasY - (component.position?.y || 0);
       setDragOffset({ x, y });
+      dragSnapConfigRef.current = getSnapConfig();
     }
   };
 
@@ -826,10 +870,16 @@ export function Canvas({
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
-      const x =
+      let x =
         (touch.clientX - canvasRect.left + scrollLeft) / scale - dragOffset.x;
-      const y =
+      let y =
         (touch.clientY - canvasRect.top + scrollTop) / scale - dragOffset.y;
+
+      if (dragSnapConfigRef.current.snapToGrid) {
+        const size = dragSnapConfigRef.current.gridSize;
+        x = Math.round(x / size) * size;
+        y = Math.round(y / size) * size;
+      }
 
       updateComponentWithHistory(draggingComponent, {
         position: { x, y },
@@ -848,9 +898,15 @@ export function Canvas({
       const scrollLeft = canvasRef.current.scrollLeft;
       const scrollTop = canvasRef.current.scrollTop;
 
-      const x =
+      let x =
         (e.clientX - canvasRect.left + scrollLeft) / scale - dragOffset.x;
-      const y = (e.clientY - canvasRect.top + scrollTop) / scale - dragOffset.y;
+      let y = (e.clientY - canvasRect.top + scrollTop) / scale - dragOffset.y;
+
+      if (dragSnapConfigRef.current.snapToGrid) {
+        const size = dragSnapConfigRef.current.gridSize;
+        x = Math.round(x / size) * size;
+        y = Math.round(y / size) * size;
+      }
 
       updateComponentWithHistory(draggingComponent, {
         position: { x, y },
@@ -970,8 +1026,122 @@ export function Canvas({
     [],
   );
 
+  // --- Ruler helpers ---
+  const RULER_SIZE = 20; // px thickness of each ruler bar
+
+  const buildHRulerTicks = () => {
+    if (!canvasRef.current) return [];
+    const scale = canvasZoom / 100;
+    const viewW = canvasRef.current.clientWidth;
+    // step in px at 100% zoom — keep ticks from being too dense
+    const rawStep = 100;
+    const step = rawStep * scale;
+    const firstCanvasPx = Math.floor(rulerScroll.x / step) * rawStep;
+    const ticks: { label: string; x: number }[] = [];
+    for (let cx = firstCanvasPx; cx * scale - rulerScroll.x < viewW + step; cx += rawStep) {
+      const screenX = cx * scale - rulerScroll.x + RULER_SIZE;
+      ticks.push({ label: String(cx), x: screenX });
+    }
+    return ticks;
+  };
+
+  const buildVRulerTicks = () => {
+    if (!canvasRef.current) return [];
+    const scale = canvasZoom / 100;
+    const viewH = canvasRef.current.clientHeight;
+    const rawStep = 100;
+    const step = rawStep * scale;
+    const firstCanvasPx = Math.floor(rulerScroll.y / step) * rawStep;
+    const ticks: { label: string; y: number }[] = [];
+    for (let cy = firstCanvasPx; cy * scale - rulerScroll.y < viewH + step; cy += rawStep) {
+      const screenY = cy * scale - rulerScroll.y + RULER_SIZE;
+      ticks.push({ label: String(cy), y: screenY });
+    }
+    return ticks;
+  };
+
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-slate-900 relative overflow-hidden">
+
+      {/* ── Rulers ──*/}
+      {showRulers && !readOnly && (
+        <>
+          {/* Top horizontal ruler */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: RULER_SIZE,
+              right: 0,
+              height: RULER_SIZE,
+              zIndex: 10,
+              background: 'var(--card, #1e1e2e)',
+              borderBottom: '1px solid var(--border, #333)',
+              overflow: 'hidden',
+              pointerEvents: 'none',
+            }}
+          >
+            <svg width="100%" height={RULER_SIZE} style={{ display: 'block' }}>
+              {buildHRulerTicks().map(({ label, x }) => (
+                <g key={label}>
+                  <line x1={x} y1={RULER_SIZE} x2={x} y2={RULER_SIZE - 8} stroke="var(--muted-foreground,#888)" strokeWidth={1} />
+                  <text x={x + 2} y={RULER_SIZE - 10} fontSize={8} fill="var(--muted-foreground,#888)" fontFamily="monospace">{label}</text>
+                </g>
+              ))}
+            </svg>
+          </div>
+
+          {/* Left vertical ruler */}
+          <div
+            style={{
+              position: 'absolute',
+              top: RULER_SIZE,
+              left: 0,
+              bottom: 0,
+              width: RULER_SIZE,
+              zIndex: 10,
+              background: 'var(--card, #1e1e2e)',
+              borderRight: '1px solid var(--border, #333)',
+              overflow: 'hidden',
+              pointerEvents: 'none',
+            }}
+          >
+            <svg width={RULER_SIZE} height="100%" style={{ display: 'block' }}>
+              {buildVRulerTicks().map(({ label, y }) => (
+                <g key={label}>
+                  <line x1={RULER_SIZE} y1={y} x2={RULER_SIZE - 8} y2={y} stroke="var(--muted-foreground,#888)" strokeWidth={1} />
+                  <text
+                    x={RULER_SIZE - 10}
+                    y={y - 2}
+                    fontSize={8}
+                    fill="var(--muted-foreground,#888)"
+                    fontFamily="monospace"
+                    transform={`rotate(-90, ${RULER_SIZE - 10}, ${y - 2})`}
+                  >{label}</text>
+                </g>
+              ))}
+            </svg>
+          </div>
+
+          {/* Corner square */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: RULER_SIZE,
+              height: RULER_SIZE,
+              zIndex: 11,
+              background: 'var(--card, #1e1e2e)',
+              borderRight: '1px solid var(--border, #333)',
+              borderBottom: '1px solid var(--border, #333)',
+              pointerEvents: 'none',
+            }}
+          />
+        </>
+      )
+      }
+
       {/* Canvas area */}
       <div
         ref={(node) => {
@@ -981,14 +1151,16 @@ export function Canvas({
           }
         }}
         id="canvas-area"
-       className={`w-full h-full figma-canvas-infinite overflow-y-auto overflow-x-hidden ${isOver ? "bg-primary/5" : ""}`}
+        className={`w-full h-full figma-canvas-infinite overflow-y-auto overflow-x-hidden ${isOver ? "bg-primary/5" : ""}`}
         style={{
           backgroundColor: canvasProperties.backgroundColor,
           backgroundImage: gridPattern,
           backgroundSize: `${canvasProperties.gridSize}px ${canvasProperties.gridSize}px`,
           backgroundPosition: "0 0",
+          ...(showRulers && !readOnly ? { paddingTop: RULER_SIZE, paddingLeft: RULER_SIZE } : {}),
         }}
         onWheel={handleWheel}
+        onScroll={handleCanvasScroll}
         onContextMenu={handleCanvasContextMenu}
         onClick={(e) => {
           if (e.target === e.currentTarget || e.target === contentRef.current) {
@@ -998,7 +1170,7 @@ export function Canvas({
           }
         }}
       >
-      
+
         {/* Zoom Controls - Hide in Read Only */}
         {!readOnly && (
           <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-background/90 backdrop-blur-sm border border-border rounded-lg shadow-lg px-2 py-1.5 z-50">
@@ -1136,13 +1308,12 @@ export function Canvas({
                       <div
                         key={component.id}
                         data-component-id={component.id}
-                        className={`absolute transition-shadow duration-200 ${
-                          isSelected
-                            ? "z-50 ring-2 ring-primary shadow-2xl" // Always on very top when selected
-                            : isDragging
-                              ? "z-40" // On top while moving
-                              : "z-auto" // <--- IMPORTANT: Natural order for everyone else
-                        } ${isDragging ? "cursor-grabbing" : readOnly ? "cursor-default" : "cursor-grab"}`}
+                        className={`absolute transition-shadow duration-200 ${isSelected
+                          ? "z-50 ring-2 ring-primary shadow-2xl"
+                          : isDragging
+                            ? "z-40"
+                            : "z-auto"
+                          } ${isDragging ? "cursor-grabbing" : readOnly ? "cursor-default" : "cursor-grab"}`}
                         style={{
                           left: `${position.x}px`,
                           top: `${position.y}px`,
@@ -1163,34 +1334,34 @@ export function Canvas({
                         onClick={
                           !readOnly
                             ? (e) => {
-                                e.stopPropagation();
+                              e.stopPropagation();
 
-                                if (e.ctrlKey || e.metaKey) {
-                                  // Multi-select with Ctrl/Cmd key
-                                  const newSelection = new Set(
-                                    selectedComponents,
-                                  );
-                                  if (newSelection.has(component.id)) {
-                                    newSelection.delete(component.id);
-                                  } else {
-                                    newSelection.add(component.id);
-                                  }
-                                  setSelectedComponents(newSelection);
+                              if (e.ctrlKey || e.metaKey) {
+                                // Multi-select with Ctrl/Cmd key
+                                const newSelection = new Set(
+                                  selectedComponents,
+                                );
+                                if (newSelection.has(component.id)) {
+                                  newSelection.delete(component.id);
                                 } else {
-                                  // Single select
-                                  setSelectedComponents(
-                                    new Set([component.id]),
-                                  );
+                                  newSelection.add(component.id);
                                 }
-                                onSelectComponent(component);
+                                setSelectedComponents(newSelection);
+                              } else {
+                                // Single select
+                                setSelectedComponents(
+                                  new Set([component.id]),
+                                );
                               }
+                              onSelectComponent(component);
+                            }
                             : undefined
                         }
                         onContextMenu={
                           !readOnly
                             ? (e) => {
-                                handleComponentContextMenu(e, component);
-                              }
+                              handleComponentContextMenu(e, component);
+                            }
                             : undefined
                         }
                         onDoubleClick={
@@ -1205,13 +1376,13 @@ export function Canvas({
                           onUpdate={
                             !readOnly
                               ? (updates) =>
-                                  onUpdateComponent(component.id, updates)
-                              : () => {}
+                                onUpdateComponent(component.id, updates)
+                              : () => { }
                           }
                           onDelete={
                             !readOnly
                               ? () => onDeleteComponent(component.id)
-                              : () => {}
+                              : () => { }
                           }
                           editingComponentId={readOnly ? null : editingTextId}
                           onEditComponent={setEditingTextId}
@@ -1255,27 +1426,29 @@ export function Canvas({
       </div>
 
       {/* Canvas Context Menu - Hide in Read Only */}
-      {!readOnly && (
-        <CanvasContextMenu
-          position={contextMenu}
-          onClose={() => setContextMenu(null)}
-          onDuplicate={handleDuplicate}
-          onDelete={handleDelete}
-          onGroup={groupSelectedComponents}
-          onUngroup={ungroupSelected}
-          onBringToFront={bringToFront}
-          onSendToBack={sendToBack}
-          onMoveForward={() =>
-            selectedComponent && onMoveLayer(selectedComponent.id, "forward")
-          }
-          onMoveBackward={() =>
-            selectedComponent && onMoveLayer(selectedComponent.id, "backward")
-          }
-          onCopy={() => copyToClipboard()}
-          canGroup={selectedComponents.size > 1}
-          canUngroup={selectedComponent?.type === "group"}
-        />
-      )}
-    </div>
+      {
+        !readOnly && (
+          <CanvasContextMenu
+            position={contextMenu}
+            onClose={() => setContextMenu(null)}
+            onDuplicate={handleDuplicate}
+            onDelete={handleDelete}
+            onGroup={groupSelectedComponents}
+            onUngroup={ungroupSelected}
+            onBringToFront={bringToFront}
+            onSendToBack={sendToBack}
+            onMoveForward={() =>
+              selectedComponent && onMoveLayer(selectedComponent.id, "forward")
+            }
+            onMoveBackward={() =>
+              selectedComponent && onMoveLayer(selectedComponent.id, "backward")
+            }
+            onCopy={() => copyToClipboard()}
+            canGroup={selectedComponents.size > 1}
+            canUngroup={selectedComponent?.type === "group"}
+          />
+        )
+      }
+    </div >
   );
 }
