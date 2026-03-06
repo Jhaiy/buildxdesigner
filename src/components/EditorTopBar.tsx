@@ -117,6 +117,98 @@ interface EditorTopBarProps {
   onDeletePage?: (pageId: string) => void;
 }
 
+interface ProjectCollaborator {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string | null;
+  role: string;
+  isCurrentUser: boolean;
+}
+
+const mergeCollaborators = (
+  existing: ProjectCollaborator,
+  incoming: ProjectCollaborator,
+): ProjectCollaborator => {
+  const pickPreferred = (currentValue: string, nextValue: string) =>
+    currentValue && currentValue.trim() ? currentValue : nextValue;
+
+  return {
+    id: pickPreferred(existing.id, incoming.id),
+    name: pickPreferred(existing.name, incoming.name),
+    email: pickPreferred(existing.email, incoming.email),
+    avatarUrl: existing.avatarUrl || incoming.avatarUrl || null,
+    role:
+      existing.role === "Owner" || incoming.role !== "Owner"
+        ? existing.role
+        : incoming.role,
+    isCurrentUser: existing.isCurrentUser || incoming.isCurrentUser,
+  };
+};
+
+const dedupeCollaboratorsByIdentity = (
+  list: ProjectCollaborator[],
+): ProjectCollaborator[] => {
+  const deduped: ProjectCollaborator[] = [];
+
+  list.forEach((candidate) => {
+    const candidateEmail = candidate.email.trim().toLowerCase();
+    const existingIndex = deduped.findIndex((entry) => {
+      const sameId =
+        Boolean(candidate.id && entry.id) && candidate.id === entry.id;
+      const sameEmail =
+        Boolean(candidateEmail && entry.email) &&
+        candidateEmail === entry.email.trim().toLowerCase();
+      return sameId || sameEmail;
+    });
+
+    if (existingIndex === -1) {
+      deduped.push(candidate);
+      return;
+    }
+
+    deduped[existingIndex] = mergeCollaborators(
+      deduped[existingIndex],
+      candidate,
+    );
+  });
+
+  return deduped;
+};
+
+const normalizeCollaboratorRows = (raw: any): any[] => {
+  if (Array.isArray(raw)) return raw;
+
+  const candidates = [
+    raw?.collaborators,
+    raw?.permissions,
+    raw?.members,
+    raw?.users,
+    raw?.data,
+    raw?.rows,
+    raw?.result,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+
+  return [];
+};
+
+const formatRoleLabel = (role: unknown, isOwner: boolean) => {
+  if (isOwner) return "Owner";
+
+  const value = String(role || "").trim();
+  if (!value) return "Collaborator";
+
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 export function EditorTopBar({
   viewMode,
   onViewModeChange,
@@ -170,6 +262,11 @@ export function EditorTopBar({
   );
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false);
   const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
+  const [collaborators, setCollaborators] = useState<ProjectCollaborator[]>([]);
+  const [isLoadingCollaborators, setIsLoadingCollaborators] = useState(false);
+  const [collaboratorsError, setCollaboratorsError] = useState<string | null>(
+    null,
+  );
   const [isTogglingTemplatePublish, setIsTogglingTemplatePublish] =
     useState(false);
   const [templatePublishedState, setTemplatePublishedState] = useState(
@@ -484,6 +581,208 @@ export function EditorTopBar({
     const fromStorage = localStorage.getItem("fulldev-ai-current-project-id");
     return fromStorage && fromStorage !== "private" ? fromStorage : null;
   };
+
+  useEffect(() => {
+    if (!showShareDropdown) return;
+
+    const projectId = resolveProjectId();
+    if (!projectId) {
+      setCollaborators([]);
+      setCollaboratorsError("Missing project id.");
+      return;
+    }
+
+    let didCancel = false;
+
+    const fetchCollaborators = async () => {
+      try {
+        setIsLoadingCollaborators(true);
+        setCollaboratorsError(null);
+
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session?.access_token) {
+          headers.Authorization = `Bearer ${session.access_token}`;
+        }
+
+        const requestInit: RequestInit = {
+          method: "GET",
+          headers,
+        };
+
+        if (typeof window !== "undefined") {
+          const apiOrigin = new URL(API_URL, window.location.origin).origin;
+          if (apiOrigin === window.location.origin) {
+            requestInit.credentials = "include";
+          }
+        }
+
+        const response = await fetch(
+          `${API_URL}/api/view-permissions/${encodeURIComponent(projectId)}`,
+          requestInit,
+        );
+
+        const payload = await response
+          .clone()
+          .json()
+          .catch(async () => ({ raw: await response.text().catch(() => "") }));
+
+        if (!response.ok) {
+          throw new Error(payload?.message || "Failed to load collaborators.");
+        }
+
+        const rows = normalizeCollaboratorRows(payload);
+        const dedupedByIdentity = new Map<string, ProjectCollaborator>();
+
+        rows.forEach((row: any) => {
+          const id = String(
+            row?.user_id ??
+              row?.userId ??
+              row?.id ??
+              row?.member_id ??
+              row?.profile_id ??
+              row?.profiles?.user_id ??
+              "",
+          ).trim();
+
+          const email = String(
+            row?.email ??
+              row?.email_address ??
+              row?.user_email ??
+              row?.user?.email ??
+              row?.profile?.email ??
+              row?.profiles?.email ??
+              row?.profiles?.email_address ??
+              "",
+          ).trim();
+
+          const name = String(
+            row?.full_name ??
+              row?.name ??
+              row?.display_name ??
+              row?.user?.full_name ??
+              row?.user?.name ??
+              row?.profile?.full_name ??
+              row?.profile?.name ??
+              row?.profiles?.full_name ??
+              row?.profiles?.name ??
+              email.split("@")[0] ??
+              "Collaborator",
+          ).trim();
+
+          const avatarUrl =
+            row?.avatar_url ??
+            row?.avatarUrl ??
+            row?.user?.avatar_url ??
+            row?.profile?.avatar_url ??
+            row?.profiles?.avatar_url ??
+            null;
+
+          const isOwner =
+            row?.is_owner === true ||
+            String(row?.role || "").toLowerCase() === "owner";
+
+          const role = formatRoleLabel(
+            row?.role ?? row?.permission ?? row?.access_level,
+            isOwner,
+          );
+
+          const key = `${id || ""}|${email.toLowerCase()}`;
+          if (!key || key === "|") return;
+
+          dedupedByIdentity.set(key, {
+            id: id || email,
+            name,
+            email,
+            avatarUrl,
+            role,
+            isCurrentUser:
+              Boolean(currentUser?.id && id && currentUser.id === id) ||
+              Boolean(
+                currentUser?.email &&
+                email &&
+                currentUser.email.toLowerCase() === email.toLowerCase(),
+              ),
+          });
+        });
+
+        if (currentUser?.email || currentUser?.id) {
+          const currentUserEmail = (currentUser?.email || "").toLowerCase();
+          const key = `${currentUser?.id || ""}|${currentUserEmail}`;
+          if (!dedupedByIdentity.has(key)) {
+            dedupedByIdentity.set(key, {
+              id: currentUser?.id || currentUser?.email || "current-user",
+              name:
+                currentUser?.name ||
+                currentUser?.email?.split("@")[0] ||
+                "User",
+              email: currentUser?.email || "",
+              avatarUrl: currentUser?.avatar_url || null,
+              role: "Owner",
+              isCurrentUser: true,
+            });
+          }
+        }
+
+        if (!didCancel) {
+          setCollaborators(
+            dedupeCollaboratorsByIdentity(
+              Array.from(dedupedByIdentity.values()),
+            ),
+          );
+        }
+      } catch (error) {
+        if (!didCancel) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Failed to load collaborators.";
+          setCollaboratorsError(message);
+
+          if (currentUser?.email || currentUser?.id) {
+            setCollaborators([
+              {
+                id: currentUser?.id || currentUser?.email || "current-user",
+                name:
+                  currentUser?.name ||
+                  currentUser?.email?.split("@")[0] ||
+                  "User",
+                email: currentUser?.email || "",
+                avatarUrl: currentUser?.avatar_url || null,
+                role: "Owner",
+                isCurrentUser: true,
+              },
+            ]);
+          } else {
+            setCollaborators([]);
+          }
+        }
+      } finally {
+        if (!didCancel) {
+          setIsLoadingCollaborators(false);
+        }
+      }
+    };
+
+    void fetchCollaborators();
+
+    return () => {
+      didCancel = true;
+    };
+  }, [
+    showShareDropdown,
+    currentProject?.id,
+    currentUser?.id,
+    currentUser?.email,
+    currentUser?.name,
+    currentUser?.avatar_url,
+  ]);
 
   const applyShareVisibilityChange = async (
     nextVisibility: "private" | "anyone",
@@ -1175,40 +1474,61 @@ export function EditorTopBar({
                 <h4 className="text-sm font-medium text-muted-foreground">
                   People with access
                 </h4>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {currentUser?.avatar_url ? (
-                      <img
-                        src={currentUser.avatar_url || "/placeholder.svg"}
-                        alt="Profile"
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold">
-                        {currentUser?.name?.[0]?.toUpperCase() ||
-                          currentUser?.email?.[0]?.toUpperCase() ||
-                          "U"}
-                      </div>
-                    )}
+                {isLoadingCollaborators && (
+                  <div className="text-xs text-muted-foreground">
+                    Loading collaborators...
+                  </div>
+                )}
 
-                    <div>
-                      <div className="text-sm font-medium text-foreground">
-                        {currentUser?.name ||
-                          currentUser?.email?.split("@")[0] ||
-                          "User"}{" "}
-                        (you)
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {currentUser?.email || "user@example.com"}
+                {collaboratorsError && (
+                  <div className="text-xs text-red-500">
+                    {collaboratorsError}
+                  </div>
+                )}
+
+                {!isLoadingCollaborators && collaborators.length === 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    No collaborators found.
+                  </div>
+                )}
+
+                {collaborators.map((collaborator) => (
+                  <div
+                    key={`${collaborator.id}-${collaborator.email}`}
+                    className="flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {collaborator.avatarUrl ? (
+                        <img
+                          src={collaborator.avatarUrl || "/placeholder.svg"}
+                          alt={collaborator.name}
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold">
+                          {collaborator.name?.[0]?.toUpperCase() ||
+                            collaborator.email?.[0]?.toUpperCase() ||
+                            "U"}
+                        </div>
+                      )}
+
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-foreground truncate">
+                          {collaborator.name}
+                          {collaborator.isCurrentUser ? " (you)" : ""}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {collaborator.email || "No email"}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="px-3 py-1.5 text-sm text-muted-foreground bg-muted rounded-md flex items-center gap-1">
-                    Owner
-                    <ChevronDown className="w-3 h-3" />
+                    <div className="px-3 py-1.5 text-sm text-muted-foreground bg-muted rounded-md flex items-center gap-1">
+                      {collaborator.role}
+                      <ChevronDown className="w-3 h-3" />
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
 
               <div className="space-y-3">
