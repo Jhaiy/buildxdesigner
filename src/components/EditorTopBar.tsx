@@ -267,6 +267,15 @@ export function EditorTopBar({
   const [collaboratorsError, setCollaboratorsError] = useState<string | null>(
     null,
   );
+  const [collaboratorsRefreshKey, setCollaboratorsRefreshKey] = useState(0);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [isAddingCollaborator, setIsAddingCollaborator] = useState(false);
+  const [updatingPermissionFor, setUpdatingPermissionFor] = useState<
+    string | null
+  >(null);
+  const [removingCollaboratorFor, setRemovingCollaboratorFor] = useState<
+    string | null
+  >(null);
   const [isTogglingTemplatePublish, setIsTogglingTemplatePublish] =
     useState(false);
   const [templatePublishedState, setTemplatePublishedState] = useState(
@@ -777,6 +786,7 @@ export function EditorTopBar({
     };
   }, [
     showShareDropdown,
+    collaboratorsRefreshKey,
     currentProject?.id,
     currentUser?.id,
     currentUser?.email,
@@ -875,6 +885,277 @@ export function EditorTopBar({
       toast.error(message);
     } finally {
       setIsUpdatingVisibility(false);
+    }
+  };
+
+  const updatePermission = async (
+    userId: string,
+    newRole: "editor" | "viewer",
+  ) => {
+    const projectId = resolveProjectId();
+    if (!projectId) {
+      toast.error("Unable to update permission: missing project id.");
+      return;
+    }
+
+    // Find the collaborator to preserve their current data
+    const collaborator = collaborators.find((c) => c.id === userId);
+    if (!collaborator) {
+      toast.error("Collaborator not found.");
+      return;
+    }
+
+    const previousRole = collaborator.role;
+    const previousCollaborators = collaborators;
+
+    // Optimistic update
+    setCollaborators(
+      collaborators.map((c) =>
+        c.id === userId
+          ? { ...c, role: newRole.charAt(0).toUpperCase() + newRole.slice(1) }
+          : c,
+      ),
+    );
+    setUpdatingPermissionFor(userId);
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
+      }
+
+      const requestInit: RequestInit = {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          projectId,
+          userId,
+          newRole,
+        }),
+      };
+
+      if (typeof window !== "undefined") {
+        const apiOrigin = new URL(API_URL, window.location.origin).origin;
+        if (apiOrigin === window.location.origin) {
+          requestInit.credentials = "include";
+        }
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/update-permission`,
+        requestInit,
+      );
+
+      const data = await response
+        .clone()
+        .json()
+        .catch(async () => ({ raw: await response.text().catch(() => "") }));
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to update permission.");
+      }
+
+      toast.success(
+        `Permission updated to ${newRole.charAt(0).toUpperCase() + newRole.slice(1)}.`,
+      );
+    } catch (error) {
+      // Revert to previous state on error
+      setCollaborators(previousCollaborators);
+      const message =
+        error instanceof Error ? error.message : "Failed to update permission.";
+      console.error("[EditorTopBar] permission update failed", error);
+      toast.error(message);
+    } finally {
+      setUpdatingPermissionFor(null);
+    }
+  };
+
+  const handleAddCollaborator = async () => {
+    if (isAddingCollaborator) return;
+
+    const projectId = resolveProjectId();
+    const normalizedEmail = inviteEmail.trim().toLowerCase();
+
+    if (!projectId) {
+      toast.error("Unable to add collaborator: missing project id.");
+      return;
+    }
+
+    if (!normalizedEmail) {
+      toast.error("Please enter an email address.");
+      return;
+    }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(normalizedEmail)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+
+    const alreadyExists = collaborators.some(
+      (collaborator) =>
+        collaborator.email.trim().toLowerCase() === normalizedEmail,
+    );
+
+    if (alreadyExists) {
+      toast.info("This user is already a collaborator.");
+      return;
+    }
+
+    try {
+      setIsAddingCollaborator(true);
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
+      }
+
+      const requestInit: RequestInit = {
+        method: "POST",
+        headers,
+      };
+
+      if (typeof window !== "undefined") {
+        const apiOrigin = new URL(API_URL, window.location.origin).origin;
+        if (apiOrigin === window.location.origin) {
+          requestInit.credentials = "include";
+        }
+      }
+
+      const payloadCandidates = [
+        { project_id: projectId, email: normalizedEmail },
+        { projectId, email: normalizedEmail },
+      ];
+
+      let response: Response | null = null;
+      let data: any = null;
+
+      for (const payload of payloadCandidates) {
+        response = await fetch(`${API_URL}/api/add-collaborator`, {
+          ...requestInit,
+          body: JSON.stringify(payload),
+        });
+
+        data = await response
+          .clone()
+          .json()
+          .catch(async () => ({ raw: await response!.text().catch(() => "") }));
+
+        if (response.ok) break;
+
+        if (response.status !== 400 && response.status !== 422) {
+          break;
+        }
+      }
+
+      if (!response || !response.ok) {
+        const message =
+          data?.message ||
+          data?.error ||
+          data?.details ||
+          data?.raw ||
+          `Failed to add collaborator${response ? ` (${response.status})` : ""}.`;
+        throw new Error(message);
+      }
+
+      setInviteEmail("");
+      setCollaboratorsError(null);
+      setCollaboratorsRefreshKey((prev) => prev + 1);
+      toast.success("Collaborator added successfully.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to add collaborator.";
+      toast.error(message);
+    } finally {
+      setIsAddingCollaborator(false);
+    }
+  };
+
+  const removeCollaborator = async (userId: string) => {
+    if (removingCollaboratorFor) return;
+
+    const projectId = resolveProjectId();
+    if (!projectId) {
+      toast.error("Unable to remove collaborator: missing project id.");
+      return;
+    }
+
+    try {
+      setRemovingCollaboratorFor(userId);
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
+      }
+
+      const requestInit: RequestInit = {
+        method: "DELETE",
+        headers,
+        body: JSON.stringify({
+          projectId,
+          userId,
+        }),
+      };
+
+      if (typeof window !== "undefined") {
+        const apiOrigin = new URL(API_URL, window.location.origin).origin;
+        if (apiOrigin === window.location.origin) {
+          requestInit.credentials = "include";
+        }
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/remove-collaborator`,
+        requestInit,
+      );
+
+      const data = await response
+        .clone()
+        .json()
+        .catch(async () => ({ raw: await response.text().catch(() => "") }));
+
+      if (!response.ok) {
+        const message =
+          data?.message ||
+          data?.error ||
+          data?.details ||
+          data?.raw ||
+          "Failed to remove collaborator.";
+        throw new Error(message);
+      }
+
+      setCollaboratorsError(null);
+      setCollaboratorsRefreshKey((prev) => prev + 1);
+      toast.success("Collaborator removed successfully.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to remove collaborator.";
+      toast.error(message);
+    } finally {
+      setRemovingCollaboratorFor(null);
     }
   };
 
@@ -1474,6 +1755,46 @@ export function EditorTopBar({
                 <h4 className="text-sm font-medium text-muted-foreground">
                   People with access
                 </h4>
+
+                {collaborators.some(
+                  (c) => c.isCurrentUser && c.role === "Owner",
+                ) && (
+                  <div className="grid grid-cols-1 gap-2 items-end">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="invite-collaborator-email"
+                        className="text-xs text-muted-foreground"
+                      >
+                        Invite by email
+                      </Label>
+                      <Input
+                        id="invite-collaborator-email"
+                        type="email"
+                        placeholder="name@example.com"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void handleAddCollaborator();
+                          }
+                        }}
+                        disabled={isAddingCollaborator}
+                        className="h-9"
+                      />
+                    </div>
+
+                    <Button
+                      size="sm"
+                      onClick={() => void handleAddCollaborator()}
+                      disabled={isAddingCollaborator || !inviteEmail.trim()}
+                      className="h-9"
+                    >
+                      {isAddingCollaborator ? "Adding..." : "Add"}
+                    </Button>
+                  </div>
+                )}
+
                 {isLoadingCollaborators && (
                   <div className="text-xs text-muted-foreground">
                     Loading collaborators...
@@ -1523,10 +1844,72 @@ export function EditorTopBar({
                       </div>
                     </div>
 
-                    <div className="px-3 py-1.5 text-sm text-muted-foreground bg-muted rounded-md flex items-center gap-1">
-                      {collaborator.role}
-                      <ChevronDown className="w-3 h-3" />
-                    </div>
+                    {(() => {
+                      // Determine if the current user is an owner
+                      const currentUserIsOwner = collaborators.some(
+                        (c) => c.isCurrentUser && c.role === "Owner",
+                      );
+
+                      // Show select dropdown only if:
+                      // 1. Current user is the owner
+                      // 2. The collaborator is not the current user (can't change own role)
+                      const canChangeRole =
+                        currentUserIsOwner && !collaborator.isCurrentUser;
+
+                      if (canChangeRole) {
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                void removeCollaborator(collaborator.id)
+                              }
+                              disabled={
+                                removingCollaboratorFor === collaborator.id ||
+                                updatingPermissionFor === collaborator.id
+                              }
+                              className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                              aria-label={`Remove ${collaborator.name}`}
+                              title="Remove collaborator"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+
+                            <Select
+                              value={collaborator.role.toLowerCase()}
+                              onValueChange={(value: string) =>
+                                updatePermission(
+                                  collaborator.id,
+                                  value as "editor" | "viewer",
+                                )
+                              }
+                              disabled={
+                                updatingPermissionFor === collaborator.id ||
+                                removingCollaboratorFor === collaborator.id
+                              }
+                            >
+                              <SelectTrigger className="px-3 py-1.5 text-sm text-muted-foreground bg-muted rounded-md flex items-center gap-1 border-0 h-auto w-fit">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  <SelectItem value="editor">Editor</SelectItem>
+                                  <SelectItem value="viewer">Viewer</SelectItem>
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="px-3 py-1.5 text-sm text-muted-foreground bg-muted rounded-md flex items-center gap-1">
+                          {collaborator.role}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>

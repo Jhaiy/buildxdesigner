@@ -117,14 +117,10 @@ function AppRoutes({ editor }: { editor: EditorController }) {
   ) => {
     openProject(projectId, projectName);
     const itShouldGoPrivate = isPublic === false;
-    const isProjectOwner =
-      !!currentUser?.id && !!authorId && currentUser.id === authorId;
     const targetPath = projectId
-      ? itShouldGoPrivate && !isProjectOwner
-        ? `/project-private/${projectId}`
-        : itShouldGoPrivate && isProjectOwner
-          ? `/editor/${projectId}/private`
-          : `/editor/${projectId}`
+      ? itShouldGoPrivate
+        ? `/editor/${projectId}/private`
+        : `/editor/${projectId}`
       : "/editor";
     if (location.pathname !== targetPath) {
       navigate(targetPath, { replace: true });
@@ -221,36 +217,32 @@ function AppRoutes({ editor }: { editor: EditorController }) {
   useEffect(() => {
     if (!routeProjectId) return;
     if (state.projectIsPublic === null) return;
+    if (state.projectCanView === null) return;
 
     const isPrivate = state.projectIsPublic === false;
-    const isProjectOwner =
-      !!currentUser?.id &&
-      !!state.projectAuthorId &&
-      currentUser.id === state.projectAuthorId;
+    const canViewPrivateProject = state.projectCanView === true;
     const basePath = `/editor/${routeProjectId}`;
 
     const isPrivatePath = location.pathname === privateAccessPath;
-    const isOwnerPrivateEditorPath =
-      location.pathname === ownerPrivateEditorPath;
+    const isPrivateEditorPath = location.pathname === ownerPrivateEditorPath;
 
-    if (isPrivate && !isProjectOwner && !isPrivatePath) {
+    if (isPrivate && !canViewPrivateProject && !isPrivatePath) {
       navigate(privateAccessPath, { replace: true });
       return;
     }
 
-    if (isPrivate && isProjectOwner && !isOwnerPrivateEditorPath) {
+    if (isPrivate && canViewPrivateProject && !isPrivateEditorPath) {
       navigate(ownerPrivateEditorPath, { replace: true });
       return;
     }
 
-    if (!isPrivate && (isPrivatePath || isOwnerPrivateEditorPath)) {
+    if (!isPrivate && (isPrivatePath || isPrivateEditorPath)) {
       navigate(basePath, { replace: true });
     }
   }, [
     routeProjectId,
     state.projectIsPublic,
-    state.projectAuthorId,
-    currentUser?.id,
+    state.projectCanView,
     privateAccessPath,
     ownerPrivateEditorPath,
     location.pathname,
@@ -289,6 +281,9 @@ function AppRoutes({ editor }: { editor: EditorController }) {
           currentProjectId: routeProjectId,
           projectIsPublic: null,
           projectAuthorId: null,
+          projectCanView: null,
+          projectRole: null,
+          projectCanEdit: false,
         };
         changed = true;
       }
@@ -425,17 +420,12 @@ function AppRoutes({ editor }: { editor: EditorController }) {
       <Route
         path="/editor/:projectId/private"
         element={
-          state.projectIsPublic === null ? (
+          state.projectIsPublic === null || state.projectCanView === null ? (
             <div className="flex justify-center items-center h-screen w-full bg-background">
               <Loader2 className="w-8 h-8 mr-2 text-blue-600 animate-spin" />
               <p className="text-xl text-foreground">Checking access...</p>
             </div>
-          ) : state.projectIsPublic === false &&
-            !(
-              !!currentUser?.id &&
-              !!state.projectAuthorId &&
-              currentUser.id === state.projectAuthorId
-            ) ? (
+          ) : state.projectIsPublic === false && !state.projectCanView ? (
             <Navigate to={privateAccessPath} replace />
           ) : (
             <EditorLayout
