@@ -13,6 +13,41 @@ import {
   saveProjectMetadata,
 } from "../supabase/data/projectService";
 import useCollaboration from "../services/useCollaboration";
+import { getApiBaseUrl } from "../utils/apiConfig";
+
+const API_URL =
+  import.meta.env.VITE_API_URL || getApiBaseUrl() || "http://localhost:4000";
+
+const normalizeCollaboratorRows = (raw: any): any[] => {
+  if (Array.isArray(raw)) return raw;
+
+  const candidates = [
+    raw?.collaborators,
+    raw?.permissions,
+    raw?.members,
+    raw?.users,
+    raw?.data,
+    raw?.rows,
+    raw?.result,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+
+  return [];
+};
+
+const normalizeCollaboratorRole = (
+  role: unknown,
+): "owner" | "editor" | "viewer" => {
+  const value = String(role || "")
+    .trim()
+    .toLowerCase();
+  if (value === "owner") return "owner";
+  if (value === "editor") return "editor";
+  return "viewer";
+};
 
 function getInitialTheme(): "light" | "dark" | "system" {
   const savedTheme = localStorage.getItem("fulldev-ai-theme");
@@ -91,7 +126,7 @@ export function useEditorState() {
     isResizingRightSidebar: false,
     propertiesPanelVisible: true,
     aiAssistantVisible: true,
-        canvasWidth: 1920,
+    canvasWidth: 1920,
     showMobileProperties: false,
     canvasZoom: 100,
     currentProjectId: getInitialProjectId(),
@@ -113,6 +148,9 @@ export function useEditorState() {
     userProjectConfig: getInitialUserProjectConfig(),
     projectIsPublic: null,
     projectAuthorId: null,
+    projectCanView: null,
+    projectRole: null,
+    projectCanEdit: true,
     projectSubdomain: undefined as string | undefined,
     projectIsPublished: undefined as boolean | undefined,
     projectLastPublishedAt: undefined as string | undefined,
@@ -143,6 +181,7 @@ export function useEditorState() {
   });
 
   const addComponent = (component: ComponentData) => {
+    if (!state.projectCanEdit) return;
     rawAddComponent({
       ...component,
       page_id: component.page_id || state.activePageId,
@@ -396,10 +435,11 @@ export function useEditorState() {
 
         if (isCancelled) return;
 
-        if (urlError || !urlValidity) {
+        let projectRecord = urlValidity;
+
+        if (urlError || !projectRecord) {
           console.error("Project visibility check failed.", urlError);
 
-          // If we can't read visibility, check if we can read the project itself
           const { data: projectCheck } = await supabase
             .from("projects")
             .select(
@@ -409,53 +449,161 @@ export function useEditorState() {
             .maybeSingle();
 
           if (isCancelled) return;
+          projectRecord = projectCheck;
+        }
 
-          if (projectCheck) {
-            setState((prev) => {
-              if (prev.currentProjectId !== requestedProjectId) return prev;
-              return {
-                ...prev,
-                projectIsPublic: !!projectCheck.is_public,
-                projectAuthorId: projectCheck.user_id || null,
-                projectSubdomain: projectCheck.subdomain || undefined,
-                projectIsPublished: !!projectCheck.is_published,
-                projectLastPublishedAt:
-                  projectCheck.last_published_at || undefined,
-                projectTemplatePublished:
-                  projectCheck.published_template === null ||
-                  projectCheck.published_template === undefined
-                    ? undefined
-                    : !!projectCheck.published_template,
-              };
-            });
-          } else {
-            setState((prev) => {
-              if (prev.currentProjectId !== requestedProjectId) return prev;
-              return {
-                ...prev,
-                projectIsPublic: false,
-                projectAuthorId: null,
-                projectTemplatePublished: undefined,
-              };
-            });
-          }
+        if (!projectRecord) {
+          setState((prev) => {
+            if (prev.currentProjectId !== requestedProjectId) return prev;
+            return {
+              ...prev,
+              projectIsPublic: false,
+              projectAuthorId: null,
+              projectCanView: false,
+              projectRole: null,
+              projectCanEdit: false,
+              projectTemplatePublished: undefined,
+            };
+          });
           return;
         }
+
+        const {
+          data: { session },
+        } = await getSupabaseSession();
+
+        const currentSessionUserId = session?.user?.id || null;
+        const currentSessionEmail = (session?.user?.email || "")
+          .trim()
+          .toLowerCase();
+
+        const isPublic = !!projectRecord.is_public;
+        const ownerId = projectRecord.user_id || null;
+        const isOwner =
+          !!currentSessionUserId &&
+          !!ownerId &&
+          currentSessionUserId === ownerId;
+
+        let collaboratorRole: "owner" | "editor" | "viewer" | null = null;
+
+        if (!isOwner && (currentSessionUserId || currentSessionEmail)) {
+          try {
+            const headers: Record<string, string> = {
+              "Content-Type": "application/json",
+            };
+
+            if (session?.access_token) {
+              headers.Authorization = `Bearer ${session.access_token}`;
+            }
+
+            const requestInit: RequestInit = {
+              method: "GET",
+              headers,
+            };
+
+            if (typeof window !== "undefined") {
+              const apiOrigin = new URL(API_URL, window.location.origin).origin;
+              if (apiOrigin === window.location.origin) {
+                requestInit.credentials = "include";
+              }
+            }
+
+            const response = await fetch(
+              `${API_URL}/api/view-permissions/${encodeURIComponent(requestedProjectId)}`,
+              requestInit,
+            );
+
+            const payload = await response
+              .clone()
+              .json()
+              .catch(async () => ({
+                raw: await response.text().catch(() => ""),
+              }));
+
+            if (response.ok) {
+              const rows = normalizeCollaboratorRows(payload);
+              const row = rows.find((entry: any) => {
+                const rowUserId = String(
+                  entry?.user_id ??
+                    entry?.userId ??
+                    entry?.id ??
+                    entry?.member_id ??
+                    entry?.profile_id ??
+                    entry?.profiles?.user_id ??
+                    "",
+                ).trim();
+                const rowEmail = String(
+                  entry?.email ??
+                    entry?.email_address ??
+                    entry?.user_email ??
+                    entry?.user?.email ??
+                    entry?.profile?.email ??
+                    entry?.profiles?.email ??
+                    entry?.profiles?.email_address ??
+                    "",
+                )
+                  .trim()
+                  .toLowerCase();
+
+                const sameUserId =
+                  !!currentSessionUserId &&
+                  !!rowUserId &&
+                  rowUserId === currentSessionUserId;
+                const sameEmail =
+                  !!currentSessionEmail &&
+                  !!rowEmail &&
+                  rowEmail === currentSessionEmail;
+
+                return sameUserId || sameEmail;
+              });
+
+              if (row) {
+                const isOwnerRow =
+                  row?.is_owner === true ||
+                  String(row?.role || "")
+                    .trim()
+                    .toLowerCase() === "owner";
+
+                collaboratorRole = isOwnerRow
+                  ? "owner"
+                  : normalizeCollaboratorRole(
+                      row?.role ?? row?.permission ?? row?.access_level,
+                    );
+              }
+            }
+          } catch (permissionsError) {
+            console.error(
+              "Failed to resolve collaborator permissions for access check:",
+              permissionsError,
+            );
+          }
+        }
+
+        const effectiveRole: "owner" | "editor" | "viewer" = isOwner
+          ? "owner"
+          : collaboratorRole || "viewer";
+
+        const canView = isPublic || isOwner || collaboratorRole !== null;
+        const canEdit = effectiveRole === "owner" || effectiveRole === "editor";
 
         setState((prev) => {
           if (prev.currentProjectId !== requestedProjectId) return prev;
           return {
             ...prev,
-            projectIsPublic: !!urlValidity?.is_public,
-            projectAuthorId: urlValidity?.user_id || null,
-            projectSubdomain: urlValidity?.subdomain || undefined,
-            projectIsPublished: !!urlValidity?.is_published,
-            projectLastPublishedAt: urlValidity?.last_published_at || undefined,
+            projectIsPublic: isPublic,
+            projectAuthorId: ownerId,
+            projectCanView: canView,
+            projectRole: effectiveRole,
+            projectCanEdit: canEdit,
+            projectSubdomain: projectRecord.subdomain || undefined,
+            projectIsPublished: !!projectRecord.is_published,
+            projectLastPublishedAt:
+              projectRecord.last_published_at || undefined,
             projectTemplatePublished:
-              urlValidity?.published_template === null ||
-              urlValidity?.published_template === undefined
+              projectRecord.published_template === null ||
+              projectRecord.published_template === undefined
                 ? undefined
-                : !!urlValidity?.published_template,
+                : !!projectRecord.published_template,
           };
         });
       } catch (error) {
@@ -467,6 +615,9 @@ export function useEditorState() {
             ...prev,
             projectIsPublic: false,
             projectAuthorId: null,
+            projectCanView: false,
+            projectRole: null,
+            projectCanEdit: false,
             projectTemplatePublished: undefined,
           };
         });
@@ -594,6 +745,9 @@ export function useEditorState() {
       currentProjectId: null,
       projectIsPublic: null,
       projectAuthorId: null,
+      projectCanView: null,
+      projectRole: null,
+      projectCanEdit: true,
       projectTemplatePublished: undefined,
     }));
   const goToAdminLogin = () =>
@@ -619,6 +773,9 @@ export function useEditorState() {
       currentPage: "editor",
       selectedComponent: null,
       currentProjectId: null,
+      projectCanView: true,
+      projectRole: "owner",
+      projectCanEdit: true,
       projectName: "Untitled Project",
       hasUnsavedChanges: false,
     }));
@@ -632,6 +789,9 @@ export function useEditorState() {
       currentProjectId: projectId,
       projectIsPublic: null,
       projectAuthorId: null,
+      projectCanView: null,
+      projectRole: null,
+      projectCanEdit: false,
       projectTemplatePublished: undefined,
       projectName: projectName ?? "Untitled Project",
       selectedComponent: null,
@@ -644,6 +804,7 @@ export function useEditorState() {
   };
 
   const updateProjectName = (name: string) => {
+    if (!state.projectCanEdit) return;
     setState((prev) => ({
       ...prev,
       projectName: name,
@@ -665,6 +826,8 @@ export function useEditorState() {
   // ==================== TEMPLATE LOADING ====================
 
   const loadTemplate = async (template: ComponentData[]) => {
+    if (!state.projectCanEdit) return;
+
     const centerX = 500;
     const centerY = 300;
     let currentY = centerY;
@@ -758,16 +921,19 @@ export function useEditorState() {
   };
 
   const updateCanvasBackground = (color: string) => {
+    if (!state.projectCanEdit) return;
     setState((prev) => ({ ...prev, canvasBackgroundColor: color }));
   };
 
   const toggleCanvasGrid = (show: boolean) => {
+    if (!state.projectCanEdit) return;
     setState((prev) => ({ ...prev, showCanvasGrid: show }));
   };
 
   // ==================== SAVE ====================
 
   const handleManualSave = async () => {
+    if (!state.projectCanEdit) return;
     if (!state.currentProjectId) return;
     setState((prev) => ({ ...prev, isSaving: true }));
 
@@ -979,6 +1145,7 @@ export function useEditorState() {
       }
 
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+        if (!state.projectCanEdit) return;
         event.preventDefault();
         handleManualSave();
       }
@@ -989,6 +1156,7 @@ export function useEditorState() {
       }
 
       if ((event.ctrlKey || event.metaKey) && event.key === "n") {
+        if (!state.projectCanEdit) return;
         event.preventDefault();
         clearCanvas();
       }
@@ -999,6 +1167,7 @@ export function useEditorState() {
       }
 
       if (event.key === "Delete" && state.selectedComponent) {
+        if (!state.projectCanEdit) return;
         event.preventDefault();
         deleteComponent(state.selectedComponent);
       }
@@ -1059,6 +1228,7 @@ export function useEditorState() {
   };
 
   const addPage = (name: string, path: string) => {
+    if (!state.projectCanEdit) return;
     const newPage = { id: `page-${Date.now().toString()}`, name, path };
     const newPages = [...state.pages, newPage];
     setState((prev) => ({
@@ -1072,6 +1242,7 @@ export function useEditorState() {
   };
 
   const deletePage = (pageId: string) => {
+    if (!state.projectCanEdit) return;
     setState((prev) => {
       if (prev.pages.length <= 1) return prev; // Cannot delete last page
       const newPages = prev.pages.filter((p) => p.id !== pageId);
@@ -1097,6 +1268,7 @@ export function useEditorState() {
     pageId: string,
     updates: Partial<{ name: string; path: string }>,
   ) => {
+    if (!state.projectCanEdit) return;
     setState((prev) => {
       const newPages = prev.pages.map((p) =>
         p.id === pageId ? { ...p, ...updates } : p,
@@ -1118,6 +1290,7 @@ export function useEditorState() {
     id: string,
     target: "front" | "back" | string,
   ) => {
+    if (!state.projectCanEdit) return;
     // 1. Calculate the new order using the CURRENT state
     const currentComponents = [...state.components];
     const index = currentComponents.findIndex((c) => c.id === id);
@@ -1150,6 +1323,7 @@ export function useEditorState() {
   // src/hooks/useEditorState.ts
 
   const handleMoveLayer = (id: string, action: "forward" | "backward") => {
+    if (!state.projectCanEdit) return;
     const currentComponents = [...state.components];
     const index = currentComponents.findIndex((c) => c.id === id);
 
@@ -1183,6 +1357,29 @@ export function useEditorState() {
     replaceComponents(currentComponents);
   };
 
+  const updateComponentGuarded = (
+    id: string,
+    updates: Partial<ComponentData>,
+  ) => {
+    if (!state.projectCanEdit) return;
+    updateComponent(id, updates);
+  };
+
+  const deleteComponentGuarded = (id: string) => {
+    if (!state.projectCanEdit) return;
+    deleteComponent(id);
+  };
+
+  const clearCanvasGuarded = () => {
+    if (!state.projectCanEdit) return;
+    clearCanvas();
+  };
+
+  const replaceComponentsGuarded = (components: ComponentData[]) => {
+    if (!state.projectCanEdit) return;
+    replaceComponents(components);
+  };
+
   // ==================== RETURN ====================
 
   return {
@@ -1201,13 +1398,13 @@ export function useEditorState() {
 
     // Component operations
     addComponent,
-    updateComponent,
-    deleteComponent,
+    updateComponent: updateComponentGuarded,
+    deleteComponent: deleteComponentGuarded,
     selectComponent,
     reorderComponent: handleReorderComponent,
     moveLayer: handleMoveLayer,
-    clearCanvas,
-    replaceComponents, 
+    clearCanvas: clearCanvasGuarded,
+    replaceComponents: replaceComponentsGuarded,
 
     // Toggles
     togglePreview,

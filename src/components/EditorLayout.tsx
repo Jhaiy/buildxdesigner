@@ -77,7 +77,9 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
   const [accessCheckTimedOut, setAccessCheckTimedOut] = useState(false);
 
   useEffect(() => {
-    const isChecking = state.currentProjectId && state.projectIsPublic === null;
+    const isChecking =
+      state.currentProjectId &&
+      (state.projectIsPublic === null || state.projectCanView === null);
     if (!isChecking) {
       setAccessCheckTimedOut(false);
       return;
@@ -88,11 +90,11 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
     }, 2500);
 
     return () => window.clearTimeout(timerId);
-  }, [state.currentProjectId, state.projectIsPublic]);
+  }, [state.currentProjectId, state.projectIsPublic, state.projectCanView]);
 
   if (
     state.currentProjectId &&
-    state.projectIsPublic === null &&
+    (state.projectIsPublic === null || state.projectCanView === null) &&
     !accessCheckTimedOut
   ) {
     return (
@@ -102,12 +104,11 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
     );
   }
 
-  if (
-    state.projectIsPublic === false &&
-    state.currentUser?.id !== state.projectAuthorId
-  ) {
+  if (state.projectCanView === false) {
     return <GetOut />;
   }
+
+  const canEditProject = state.projectCanEdit === true;
 
   const selectedComponentObject: ComponentData | null = state.selectedComponent
     ? state.components.find((c) => c.id === state.selectedComponent) || null
@@ -134,10 +135,10 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
             onToggleFullscreen={toggleFullscreen}
             isFullscreen={state.isFullscreen}
             projectName={state.projectName}
-            onProjectNameChange={updateProjectName}
+            onProjectNameChange={canEditProject ? updateProjectName : undefined}
             theme={state.theme}
             onThemeChange={handleThemeChange}
-            onManualSave={handleManualSave}
+            onManualSave={canEditProject ? handleManualSave : undefined}
             onPublishTemplate={handlePublishTemplate}
             onProjectVisibilityChange={(isPublic: boolean) => {
               setState((prev) => ({
@@ -154,8 +155,8 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
             pages={state.pages}
             activePageId={state.activePageId}
             onSwitchPage={editor.switchPage}
-            onAddPage={editor.addPage}
-            onDeletePage={editor.deletePage}
+            onAddPage={canEditProject ? editor.addPage : undefined}
+            onDeletePage={canEditProject ? editor.deletePage : undefined}
             currentProject={{
               id: state.currentProjectId!,
               name: state.projectName,
@@ -222,14 +223,14 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                   {/* Sidebar Content: pt-0 ensures no extra top space */}
                   <div className="flex-1 overflow-auto h-full pt-0">
                     <Sidebar
-                      onAddComponent={addComponent}
+                      onAddComponent={canEditProject ? addComponent : () => {}}
                       // REMOVED onToggle here because we handle it in the layout now
                       components={state.components}
                       selectedId={state.selectedComponent}
                       onSelect={selectComponent}
-                      onDelete={deleteComponent}
-                      onReorder={reorderComponent}
-                      onMoveLayer={editor.moveLayer}
+                      onDelete={canEditProject ? deleteComponent : () => {}}
+                      onReorder={canEditProject ? reorderComponent : () => {}}
+                      onMoveLayer={canEditProject ? editor.moveLayer : () => {}}
                       activePageId={state.activePageId}
                     />
                   </div>
@@ -254,13 +255,11 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
             <div
               className={`flex-1 flex flex-col overflow-hidden bg-muted/20 ${state.isFullscreen ? "fullscreen-canvas" : ""}`}
             >
-            
-
               <div className="flex-1 flex overflow-hidden justify-center items-start p-6 custom-scrollbar bg-muted/10">
                 <div
                   className="bg-card shadow-2xl transition-all duration-300 ease-in-out h-full overflow-hidden border border-border rounded-lg relative"
                   style={{
-                      width: state.viewMode === "design" ? "1920px" : "100%",
+                    width: state.viewMode === "design" ? "1920px" : "100%",
                     maxWidth: state.viewMode === "design" ? "1920px" : "none",
                   }}
                 >
@@ -283,6 +282,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                         activePageId={state.activePageId}
                         pages={state.pages}
                         userProjectConfig={state.userProjectConfig}
+                        readOnly={!canEditProject}
                       />
                       <RemoteCursors
                         cursors={Array.from(remoteCursors.values())}
@@ -300,7 +300,8 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                         pages={state.pages}
                         activePageId={state.activePageId}
                         onCodeChange={(newComponents) => {
-                          replaceComponents(newComponents);   
+                          if (!canEditProject) return;
+                          replaceComponents(newComponents);
                           setState((prev) => ({
                             ...prev,
                             components: newComponents,
@@ -422,8 +423,11 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                         pages={state.pages}
                         activePageId={state.activePageId}
                         selectedComponent={selectedComponentObject}
-                        onUpdateComponent={updateComponent}
+                        onUpdateComponent={
+                          canEditProject ? updateComponent : () => {}
+                        }
                         onUpdateStyle={(id, style) => {
+                          if (!canEditProject) return;
                           const component = state.components.find(
                             (c) => c.id === id,
                           );
@@ -434,6 +438,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                           }
                         }}
                         onUpdateLayout={(id, layout) => {
+                          if (!canEditProject) return;
                           const component = state.components.find(
                             (c) => c.id === id,
                           );
@@ -460,15 +465,21 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                         }}
                         canvasBackgroundColor={state.canvasBackgroundColor}
                         showCanvasGrid={state.showCanvasGrid}
-                        onUpdateCanvasBackground={updateCanvasBackground}
-                        onToggleCanvasGrid={toggleCanvasGrid}
+                        onUpdateCanvasBackground={
+                          canEditProject ? updateCanvasBackground : undefined
+                        }
+                        onToggleCanvasGrid={
+                          canEditProject ? toggleCanvasGrid : undefined
+                        }
                       />
                     )}
 
                     {state.rightSidebarTab === "ai-assistant" && (
                       <RightSidebar
                         selectedComponent={selectedComponentObject}
-                        onUpdateComponent={updateComponent}
+                        onUpdateComponent={
+                          canEditProject ? updateComponent : () => {}
+                        }
                         propertiesPanelVisible={false}
                         onToggleProperties={togglePropertiesPanel}
                         aiAssistantVisible={true}
@@ -478,6 +489,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
                           showGrid: state.showCanvasGrid,
                         }}
                         onUpdateCanvasProperties={(updates) => {
+                          if (!canEditProject) return;
                           if (updates.backgroundColor)
                             updateCanvasBackground(updates.backgroundColor);
                           if (updates.showGrid !== undefined)
@@ -529,7 +541,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
 
           <MobilePropertiesModal
             selectedComponent={selectedComponentObject}
-            onUpdateComponent={updateComponent}
+            onUpdateComponent={canEditProject ? updateComponent : () => {}}
             isOpen={state.showMobileProperties}
             onClose={() =>
               setState((prev) => ({ ...prev, showMobileProperties: false }))
@@ -552,7 +564,7 @@ export function EditorLayout({ editor }: EditorLayoutProps) {
           {state.showAIAssistantModal && (
             <RightSidebar
               selectedComponent={selectedComponentObject}
-              onUpdateComponent={updateComponent}
+              onUpdateComponent={canEditProject ? updateComponent : () => {}}
               propertiesPanelVisible={false}
               onToggleProperties={() => {}}
               aiAssistantVisible={true}

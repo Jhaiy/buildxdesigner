@@ -78,6 +78,9 @@ export interface EditorState {
   };
   projectIsPublic: boolean | null;
   projectAuthorId: string | null;
+  projectCanView: boolean | null;
+  projectRole: "owner" | "editor" | "viewer" | null;
+  projectCanEdit: boolean;
   projectSubdomain?: string;
   projectIsPublished?: boolean;
   projectLastPublishedAt?: string;
