@@ -115,7 +115,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                 <X className="w-4 h-4" />
               </button>
               
-              <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <div className="w-16 h-16 mx-auto mb-4 bg-linear-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center shadow-lg">
                 <Upload className="w-8 h-8 text-white" />
               </div>
               
@@ -172,7 +172,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                       <Label htmlFor="category">Category</Label>
                       <Select
                         value={publishSettings.category}
-                        onValueChange={(value) => handleInputChange('category')(value)}
+                        onValueChange={(value: string) => handleInputChange('category')(value)}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -227,7 +227,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                         </div>
                         <Switch
                           checked={publishSettings.isPublic}
-                          onCheckedChange={(checked) => handleInputChange('isPublic')(checked)}
+                        onCheckedChange={(checked: boolean) => handleInputChange('isPublic')(checked)}
                         />
                       </div>
                       
@@ -238,7 +238,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                         </div>
                         <Switch
                           checked={publishSettings.enableAnalytics}
-                          onCheckedChange={(checked) => handleInputChange('enableAnalytics')(checked)}
+                          onCheckedChange={(checked: boolean) => handleInputChange('enableAnalytics')(checked)}
                         />
                       </div>
                       
@@ -249,7 +249,7 @@ export const PublishModal: React.FC<PublishModalProps> = ({
                         </div>
                         <Switch
                           checked={publishSettings.enableComments}
-                          onCheckedChange={(checked) => handleInputChange('enableComments')(checked)}
+                          onCheckedChange={(checked: boolean) => handleInputChange('enableComments')(checked)}
                         />
                       </div>
                     </div>
