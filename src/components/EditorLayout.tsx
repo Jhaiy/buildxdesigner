@@ -285,6 +285,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                         userProjectConfig={state.userProjectConfig}
                         currentUser={state.currentUser}
                         readOnly={!canEditProject}
+                        activePageId={state.activePageId}
                       />
                       <RemoteCursors
                         cursors={Array.from(remoteCursors.values())}
