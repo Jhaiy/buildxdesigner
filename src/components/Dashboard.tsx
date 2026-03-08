@@ -291,6 +291,9 @@ const resolveTemplateProjectId = (item: any, fallback: string) =>
   String(
     item?.project_id ??
       item?.projectId ??
+      item?.project?.projects_id ??
+      item?.project?.project_id ??
+      item?.project?.id ??
       item?.projects_id ??
       item?.projects?.projects_id ??
       item?.projects?.project_id ??
@@ -386,6 +389,9 @@ export function Dashboard({
   const [projectLikesRows, setProjectLikesRows] = useState<any[]>([]);
   const [isApiReachable, setIsApiReachable] = useState(true);
   const projectLikesFetchErrorLoggedRef = useRef(false);
+  const likeMutationAtRef = useRef<Record<string, number>>({});
+
+  const LIKE_SYNC_COOLDOWN_MS = 10000;
 
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false);
   const [pendingDeleteProject, setPendingDeleteProject] =
@@ -429,8 +435,6 @@ export function Dashboard({
 
           if (error) {
             console.error("❌ Failed to update connection status:", error);
-          } else {
-            console.log("✅ Deferred Supabase Connection Update Complete");
           }
         }
       })();
@@ -456,6 +460,7 @@ export function Dashboard({
         item?.name ??
           item?.title ??
           item?.project_name ??
+          item?.project?.project_name ??
           item?.projects?.project_name ??
           "Untitled Template",
       ),
@@ -464,6 +469,8 @@ export function Dashboard({
           item?.template_description ??
           item?.project_description ??
           item?.summary ??
+          item?.project?.description ??
+          item?.project?.project_description ??
           item?.projects?.description ??
           item?.projects?.project_description ??
           "No description available",
@@ -472,6 +479,7 @@ export function Dashboard({
         item?.thumbnail ??
           item?.thumbnailUrl ??
           item?.image ??
+          item?.project?.thumbnail ??
           item?.projects?.thumbnail ??
           "/placeholder.svg",
       ),
@@ -479,6 +487,8 @@ export function Dashboard({
         item?.category ??
           item?.template_category ??
           item?.project_category ??
+          item?.project?.category ??
+          item?.project?.project_category ??
           item?.projects?.category ??
           item?.projects?.project_category ??
           "Business",
@@ -488,22 +498,36 @@ export function Dashboard({
       ),
       tags: Array.isArray(item?.tags)
         ? item.tags.map(String)
-        : Array.isArray(item?.projects?.tags)
-          ? item.projects.tags.map(String)
-          : [],
+        : Array.isArray(item?.project?.tags)
+          ? item.project.tags.map(String)
+          : Array.isArray(item?.projects?.tags)
+            ? item.projects.tags.map(String)
+            : [],
       creator: item?.creator
         ? String(item.creator)
-        : item?.profiles?.full_name
-          ? String(item.profiles.full_name)
-          : "BuildX Team",
+        : item?.author?.full_name
+          ? String(item.author.full_name)
+          : item?.profiles?.full_name
+            ? String(item.profiles.full_name)
+            : "BuildX Team",
       creatorAvatar: item?.creatorAvatar
         ? String(item.creatorAvatar)
-        : item?.profiles?.avatar_url
-          ? String(item.profiles.avatar_url)
-          : "https://api.dicebear.com/7.x/initials/svg?seed=BuildX",
-      views: Number(item?.views ?? item?.projects?.views ?? 0),
+        : item?.author?.avatar_url
+          ? String(item.author.avatar_url)
+          : item?.profiles?.avatar_url
+            ? String(item.profiles.avatar_url)
+            : "https://api.dicebear.com/7.x/initials/svg?seed=BuildX",
+      views: Number(
+        item?.views ?? item?.project?.views ?? item?.projects?.views ?? 0,
+      ),
       favorites: Number(
-        item?.favorites ?? item?.likes ?? item?.projects?.likes ?? 0,
+        item?.favorites ??
+          item?.like_count ??
+          item?.likeCount ??
+          item?.likes ??
+          item?.project?.likes ??
+          item?.projects?.likes ??
+          0,
       ),
     };
   };
@@ -512,46 +536,95 @@ export function Dashboard({
     let mounted = true;
 
     const fetchPublishedTemplates = async () => {
+      // Only fetch if we have a userId
+      if (!currentUserId) {
+        return;
+      }
+
       try {
-        const apiBases = getApiBaseCandidates();
-        let json: any = null;
-        let lastError: unknown = null;
+        const cbfApiUrl =
+          import.meta.env.VITE_CBF_API_URL ||
+          "http://buildx-cbfapi.buildxdesigner.site:5000";
+        const response = await fetch(
+          `${cbfApiUrl}/recommendations?user_id=${currentUserId}`,
+        );
 
-        for (const base of apiBases) {
-          try {
-            const response = await fetch(`${base}/api/display-templates`);
-            if (!response.ok) {
-              throw new Error(
-                `Failed to fetch templates from ${base}: ${response.status}`,
-              );
-            }
-
-            json = await response.json();
-            lastError = null;
-            break;
-          } catch (error) {
-            lastError = error;
-          }
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch recommendations: ${response.status}`,
+          );
         }
 
-        if (!json) {
-          throw lastError ?? new Error("Failed to fetch templates.");
-        }
+        const json = await response.json();
 
         const payload = Array.isArray(json)
           ? json
           : Array.isArray(json?.templates)
             ? json.templates
-            : [];
+            : Array.isArray(json?.recommendations)
+              ? json.recommendations
+              : [];
+
+        const recommendationLikeCounts = payload.reduce(
+          (acc: Record<string, number>, item: any) => {
+            const projectId = resolveTemplateProjectId(item, "");
+            if (!projectId) return acc;
+
+            const parsedLikeCount = Number(
+              item?.like_count ??
+                item?.likeCount ??
+                item?.favorites ??
+                item?.likes ??
+                item?.project?.likes ??
+                item?.projects?.likes,
+            );
+
+            if (Number.isFinite(parsedLikeCount) && parsedLikeCount >= 0) {
+              acc[projectId] = parsedLikeCount;
+            }
+
+            return acc;
+          },
+          {},
+        );
+
+        const recommendationLikedMap = payload.reduce(
+          (acc: Record<string, boolean>, item: any) => {
+            const projectId = resolveTemplateProjectId(item, "");
+            if (!projectId) return acc;
+
+            const isLikedByCurrentUser =
+              item?.is_liked_by_current_user === true ||
+              item?.isLikedByCurrentUser === true;
+
+            if (isLikedByCurrentUser) {
+              acc[projectId] = true;
+            }
+
+            return acc;
+          },
+          {},
+        );
 
         if (mounted) {
-          setPublishedTemplateCards(payload.map(normalizeTemplateCard));
+          const normalizedCards = payload.map(normalizeTemplateCard);
+          setPublishedTemplateCards(normalizedCards);
+
+          if (Object.keys(recommendationLikeCounts).length > 0) {
+            setProjectLikeCounts((prev) => ({
+              ...prev,
+              ...recommendationLikeCounts,
+            }));
+          }
+
+          // Don't set liked state here - let fetchAndSetProjectLikes handle it
+          // The recommendations API may have stale data
         }
         setIsApiReachable(true);
       } catch (error) {
         setIsApiReachable(false);
         console.error(
-          "Failed to load published templates for dashboard:",
+          "Failed to load recommended templates for dashboard:",
           error,
         );
       }
@@ -562,7 +635,7 @@ export function Dashboard({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [currentUserId]);
 
   const visibleRecommendedTemplates =
     publishedTemplateCards.length > 0
@@ -581,7 +654,10 @@ export function Dashboard({
 
       for (const base of apiBases) {
         try {
-          const response = await fetch(`${base}/api/project-likes`);
+          const url = currentUserId
+            ? `${base}/api/project-likes?userId=${encodeURIComponent(currentUserId)}`
+            : `${base}/api/project-likes`;
+          const response = await fetch(url);
           if (!response.ok) {
             throw new Error(
               `Failed to fetch project likes from ${base}: ${response.status}`,
@@ -603,7 +679,11 @@ export function Dashboard({
       const payload = normalizeProjectLikeRows(data);
       const interactionRows = Array.isArray(data?.projectLikes)
         ? data.projectLikes
-        : payload;
+        : Array.isArray(data?.likes)
+          ? data.likes
+          : Array.isArray(data?.interactions)
+            ? data.interactions
+            : [];
 
       const counts = payload.reduce((acc: Record<string, number>, row: any) => {
         const projectId = String(row?.project_id ?? "").trim();
@@ -624,6 +704,59 @@ export function Dashboard({
       setProjectLikesRows(
         Array.isArray(interactionRows) ? interactionRows : [],
       );
+
+      // Update liked status for current user
+      if (currentUserId) {
+        let likedProjectIds: string[] = [];
+
+        // Try to get likedProjectIds from the response (new backend)
+        if (Array.isArray(data?.likedProjectIds)) {
+          likedProjectIds = data.likedProjectIds;
+        }
+        // Fallback: Build it from projectLikes array (old backend, deployed version)
+        else if (Array.isArray(data?.projectLikes)) {
+          likedProjectIds = data.projectLikes
+            .filter(
+              (row: any) =>
+                String(row.user_id || "").trim() ===
+                String(currentUserId).trim(),
+            )
+            .map((row: any) => String(row.project_id || "").trim())
+            .filter(Boolean);
+        }
+
+        const likedMap = likedProjectIds.reduce(
+          (acc: Record<string, boolean>, projectId: string) => {
+            const trimmedId = String(projectId).trim();
+            if (trimmedId) {
+              acc[trimmedId] = true;
+            }
+            return acc;
+          },
+          {},
+        );
+
+        // Merge with existing state, keeping recently mutated likes for LIKE_SYNC_COOLDOWN_MS
+        const now = Date.now();
+        const mergedLikedMap = { ...likedMap };
+
+        Object.keys(likedTemplateIds).forEach((projectId) => {
+          const lastMutation = likeMutationAtRef.current[projectId];
+          const timeSinceMutation = lastMutation
+            ? now - lastMutation
+            : Infinity;
+          const shouldKeep =
+            lastMutation && timeSinceMutation < LIKE_SYNC_COOLDOWN_MS;
+
+          if (shouldKeep) {
+            // Keep the optimistic state for recent mutations
+            mergedLikedMap[projectId] = likedTemplateIds[projectId];
+          }
+        });
+
+        setLikedTemplateIds(mergedLikedMap);
+      }
+
       setIsApiReachable(true);
       projectLikesFetchErrorLoggedRef.current = false;
     } catch (error) {
@@ -658,32 +791,14 @@ export function Dashboard({
       }
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [isApiReachable]);
+  }, [isApiReachable, currentUserId]);
 
   useEffect(() => {
     if (!currentUserId) {
       setLikedTemplateIds({});
       return;
     }
-
-    const currentUserLikedMap = projectLikesRows.reduce(
-      (acc: Record<string, boolean>, row: any) => {
-        const rowUserId = String(row?.user_id ?? row?.userId ?? "").trim();
-        const projectId = String(
-          row?.project_id ?? row?.projectId ?? "",
-        ).trim();
-
-        if (!rowUserId || !projectId) return acc;
-        if (rowUserId !== String(currentUserId).trim()) return acc;
-
-        acc[projectId] = true;
-        return acc;
-      },
-      {},
-    );
-
-    setLikedTemplateIds(currentUserLikedMap);
-  }, [currentUserId, projectLikesRows]);
+  }, [currentUserId]);
 
   const handleLikeTemplate = async (
     event: React.MouseEvent<HTMLButtonElement>,
@@ -711,27 +826,52 @@ export function Dashboard({
 
     setLikingTemplateIds((prev) => ({ ...prev, [likeKey]: true }));
     try {
-      const response = await fetch(
-        `${API_URL}/${isCurrentlyLiked ? "api/unlike-project" : "api/like-project"}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: currentUserId,
-            projectId: likeKey,
-          }),
-        },
-      );
+      const parseJsonSafe = async (res: Response) => {
+        try {
+          return await res.json();
+        } catch {
+          return null;
+        }
+      };
+
+      const likeUrl = `${API_URL}/${isCurrentlyLiked ? "api/unlike-project" : "api/like-project"}`;
+
+      const response = await fetch(likeUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: currentUserId,
+          projectId: likeKey,
+        }),
+      });
+
+      const parsed = await parseJsonSafe(response);
 
       if (!response.ok) {
-        throw new Error(
-          `${isCurrentlyLiked ? "Unlike" : "Like"} request failed with status ${response.status}`,
-        );
+        const isIdempotentConflict =
+          response.status === 409 ||
+          (isCurrentlyLiked && response.status === 404);
+
+        if (!isIdempotentConflict) {
+          const detail =
+            parsed?.error || parsed?.message || `status ${response.status}`;
+          throw new Error(
+            `${isCurrentlyLiked ? "Unlike" : "Like"} request failed: ${detail}`,
+          );
+        }
       }
 
-      const data = await response.json();
-      const alreadyLiked = Boolean(data?.alreadyLiked);
-      const alreadyUnliked = Boolean(data?.alreadyUnliked);
+      const data = parsed ?? {};
+      const alreadyLiked =
+        Boolean(data?.alreadyLiked) ||
+        Boolean(data?.liked === true && !data?.interaction) ||
+        (!isCurrentlyLiked && response.status === 409);
+      const alreadyUnliked =
+        Boolean(data?.alreadyUnliked) ||
+        (isCurrentlyLiked &&
+          (response.status === 404 || response.status === 409));
+
+      likeMutationAtRef.current[likeKey] = Date.now();
 
       if (isCurrentlyLiked) {
         setLikedTemplateIds((prev) => ({ ...prev, [likeKey]: false }));
@@ -742,7 +882,10 @@ export function Dashboard({
           }));
         }
       } else {
-        setLikedTemplateIds((prev) => ({ ...prev, [likeKey]: true }));
+        setLikedTemplateIds((prev) => {
+          const newState = { ...prev, [likeKey]: true };
+          return newState;
+        });
         if (!alreadyLiked) {
           setProjectLikeCounts((prev) => ({
             ...prev,
@@ -750,6 +893,10 @@ export function Dashboard({
           }));
         }
       }
+
+      setTimeout(() => {
+        void fetchAndSetProjectLikes();
+      }, 2000);
     } catch (error) {
       console.error(
         `Failed to ${isCurrentlyLiked ? "unlike" : "like"} template:`,
@@ -773,7 +920,7 @@ export function Dashboard({
     }
 
     if (publishedTemplateCards.length > 0) {
-      return projectLikeCounts[projectId] ?? 0;
+      return projectLikeCounts[projectId] ?? template.favorites ?? 0;
     }
 
     return projectLikeCounts[projectId] ?? template.favorites ?? 0;
@@ -3962,7 +4109,7 @@ export function Dashboard({
           setSelectedTemplateId(templateId);
           prefetchTemplateLayout(templateId);
         }}
-        onTrackSearch={(query) => console.log("Search:", query)}
+        onTrackSearch={() => {}}
         recommendedTemplates={visibleRecommendedTemplates}
         initialTemplateId={selectedTemplateId} // Pass selectedTemplateId as initialTemplateId
       />
