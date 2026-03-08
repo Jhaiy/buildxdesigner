@@ -90,7 +90,7 @@ export function RightSidebar({
               <Label htmlFor="level">Level</Label>
               <Select
                 value={props.level?.toString() || "1"}
-                onValueChange={(value) => updateProps("level", Number.parseInt(value))}
+                onValueChange={(value: string) => updateProps("level", Number.parseInt(value))}
               >
                 <SelectTrigger id="level">
                   <SelectValue />
@@ -122,7 +122,7 @@ export function RightSidebar({
             </div>
             <div>
               <Label htmlFor="variant">Variant</Label>
-              <Select value={props.variant || "primary"} onValueChange={(value) => updateProps("variant", value)}>
+              <Select value={props.variant || "primary"} onValueChange={(value: string) => updateProps("variant", value)}>
                 <SelectTrigger id="variant">
                   <SelectValue />
                 </SelectTrigger>
@@ -378,25 +378,23 @@ export function RightSidebar({
     }
   }
 
-  // If both properties and AI assistant are hidden, don't render the sidebar
   if (!propertiesPanelVisible && !aiAssistantVisible) {
     return null
   }
 
   return (
-    <div className="w-80 h-full flex flex-col overflow-hidden relative sidebar-right border-l border-border bg-card">
+    <div className="w-full h-full flex flex-col overflow-hidden relative sidebar-right bg-card">
       {aiAssistantVisible && (
-        <div className="flex flex-col h-full bg-background">
+        <div className="flex flex-col h-full bg-background w-full">
           <div className="p-4 border-b">
             <h3 className="font-medium text-sm">AI Design Assistant</h3>
           </div>
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 w-full overflow-hidden">
             <AIAssistant selectedComponentType={selectedComponent?.type} />
           </div>
         </div>
       )}
 
-      {/* Properties Section - Floating overlay in the middle, not at top */}
       {propertiesPanelVisible && (
         <div
           className="absolute top-8 left-4 right-4 bottom-auto bg-card border border-border rounded-lg shadow-2xl z-10 transition-all duration-300"
@@ -517,7 +515,7 @@ export function RightSidebar({
                           <div className="space-y-2">
                             <RangeSlider
                               value={Math.round(Number.parseFloat(selectedComponent.style?.opacity || "1") * 100)}
-                              onValueChange={(value) => updateStyle("opacity", (value / 100).toString())}
+                              onValueChange={(value: number) => updateStyle("opacity", (value / 100).toString())}
                               min={0}
                               max={100}
                               step={5}
@@ -559,7 +557,6 @@ export function RightSidebar({
         </div>
       )}
 
-      {/* Show AI Assistant Button when collapsed */}
       {!aiAssistantVisible && onToggleAIAssistant && (
         <div className="border-b flex-shrink-0 p-2 bg-muted/30">
           <Button

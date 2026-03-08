@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
-import { Send, Bot, User, Sparkles, MessageSquare, Star, X, ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react"
+import { Send, User, MessageSquare, Star, X, ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react"
 
 interface Message {
   id: string
@@ -14,7 +14,6 @@ interface Message {
   feedback?: "up" | "down"
   animate?: boolean 
 }
-
 
 const TypewriterText = ({ text, animate }: { text: string, animate?: boolean }) => {
   const [displayedText, setDisplayedText] = useState(animate ? "" : text)
@@ -184,12 +183,10 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className="absolute -inset-1 bg-violet-600 rounded-lg blur opacity-40 animate-pulse"></div>
-              <div className="relative w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center shadow-sm">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
+              <img src="https://media.giphy.com/media/shT902UlQAd9l7lukP/giphy.gif" alt="AI Mentor Profile" className="relative w-8 h-8 rounded-lg object-cover shadow-sm" />
             </div>
             
-            <span className="font-extrabold tracking-wide text-foreground">
+            <span className="text-lg font-bold text-violet-700">
               BuildX AI Mentor
             </span>
           </div>
@@ -207,79 +204,83 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
           backgroundSize: '24px 24px'
         }}></div>
 
-        <div className="flex-1 overflow-y-auto px-5 pt-6 relative z-10" style={{ scrollbarWidth: "thin" }}>
-          <div className="space-y-6 pb-6">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${message.type === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                
-                <div className="flex-shrink-0 mt-auto mb-1">
-                  {message.type === "assistant" ? (
-                    <div className="w-8 h-8 bg-violet-600 rounded-full flex items-center justify-center shadow-md border-0">
-                      <Bot className="w-4 h-4 text-white" />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center shadow-sm border border-border">
-                      <User className="w-4 h-4 text-foreground" />
-                    </div>
-                  )}
-                </div>
-
-                <div className={`max-w-[85%] flex flex-col ${message.type === "user" ? "items-end" : "items-start"}`}>
-                  
-                  <div className={`px-4 py-3 text-sm shadow-sm rounded-2xl overflow-hidden ${
-                    message.type === "assistant" 
-                      ? "bg-muted text-foreground border border-border rounded-bl-sm" 
-                      : "bg-violet-600 text-white rounded-br-sm border-0 shadow-md font-medium"
-                  }`}>
+        <div className="flex-1 overflow-y-auto pt-6 relative z-10" style={{ scrollbarWidth: "thin" }}>
+          <div className="space-y-6 pb-6 px-6">
+            {messages.map((message) => {
+              const isUser = message.type === "user";
+              return (
+                <div key={message.id} className={`flex w-full animate-in fade-in slide-in-from-bottom-2 duration-300 ${isUser ? "justify-end" : "justify-start"}`}>
+                  <div className="flex gap-3 max-w-[85%]">
                     
-                    {message.type === "assistant" ? (
-                      <TypewriterText text={message.content} animate={message.animate} />
-                    ) : (
-                      <div className="whitespace-pre-wrap leading-relaxed">
-                        {message.content}
+                    {!isUser && (
+                      <div className="flex-shrink-0 mt-auto mb-1">
+                        <img src="https://media.giphy.com/media/0JD7et5Wyv8m0mah8z/giphy.gif" alt="AI Avatar" className="w-8 h-8 rounded-full object-cover shadow-md border-0" />
                       </div>
                     )}
-                  </div>
-                  
-                  <div className={`flex items-center gap-3 mt-1.5 px-1 ${message.type === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                    <span className="text-[10px] text-muted-foreground font-medium">
-                      {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                    
-                    {message.type === "assistant" && (
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => copyToClipboard(message.content, message.id)} className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground">
-                          {copiedId === message.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                        </button>
-                        <button onClick={() => rateMessage(message.id, "up")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "up" ? "text-violet-500" : "text-muted-foreground hover:text-violet-500"}`}>
-                          <ThumbsUp className={`w-3 h-3 ${message.feedback === "up" ? "fill-violet-500" : ""}`} />
-                        </button>
-                        <button onClick={() => rateMessage(message.id, "down")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "down" ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}>
-                          <ThumbsDown className={`w-3 h-3 ${message.feedback === "down" ? "fill-red-500" : ""}`} />
-                        </button>
+
+                    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+                      <div className={`px-4 py-3 text-sm shadow-sm rounded-2xl overflow-hidden ${
+                        isUser 
+                          ? "bg-muted text-foreground border border-border rounded-br-sm" 
+                          : "bg-violet-600 text-white rounded-bl-sm border-0 shadow-md font-medium"
+                      }`}>
+                        {isUser ? (
+                          <div className="whitespace-pre-wrap leading-relaxed">
+                            {message.content}
+                          </div>
+                        ) : (
+                          <TypewriterText text={message.content} animate={message.animate} />
+                        )}
+                      </div>
+                      
+                      <div className={`flex items-center gap-3 mt-1.5 px-1 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+                        <span className="text-[10px] text-muted-foreground font-medium">
+                          {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        
+                        {!isUser && (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => copyToClipboard(message.content, message.id)} className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground">
+                              {copiedId === message.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                            <button onClick={() => rateMessage(message.id, "up")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "up" ? "text-violet-500" : "text-muted-foreground hover:text-violet-500"}`}>
+                              <ThumbsUp className={`w-3 h-3 ${message.feedback === "up" ? "fill-violet-500" : ""}`} />
+                            </button>
+                            <button onClick={() => rateMessage(message.id, "down")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "down" ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}>
+                              <ThumbsDown className={`w-3 h-3 ${message.feedback === "down" ? "fill-red-500" : ""}`} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {isUser && (
+                      <div className="flex-shrink-0 mt-auto mb-1">
+                        <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center shadow-sm border border-border">
+                          <User className="w-4 h-4 text-foreground" />
+                        </div>
                       </div>
                     )}
+
                   </div>
                 </div>
-
-              </div>
-            ))}
-            
+              )
+            })}
             
             {isLoading && (
-              <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex-shrink-0 mt-auto mb-1">
-                  <div className="w-8 h-8 bg-violet-600 rounded-full flex items-center justify-center shadow-md">
-                    <Bot className="w-4 h-4 text-white" />
+              <div className="flex w-full justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex gap-3 max-w-[85%]">
+                  <div className="flex-shrink-0 mt-auto mb-1">
+                    <img src="https://media.giphy.com/media/0JD7et5Wyv8m0mah8z/giphy.gif" alt="AI Avatar" className="w-8 h-8 rounded-full object-cover shadow-md border-0" />
                   </div>
-                </div>
-                <div className="max-w-[85%] flex flex-col items-start mb-5">
-                  <div className="px-5 py-3.5 text-sm shadow-sm rounded-2xl overflow-hidden bg-muted text-foreground border border-border rounded-bl-sm font-medium flex items-center gap-2">
-                    <span className="text-violet-600 dark:text-violet-400 font-bold">AI is thingking...</span>
-                    <div className="flex gap-1 items-center mt-1">
-                      <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
-                      <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
-                      <div className="w-1.5 h-1.5 bg-violet-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                  <div className="flex flex-col items-start mb-5">
+                    <div className="px-5 py-3.5 text-sm shadow-sm rounded-2xl overflow-hidden bg-violet-600 text-white rounded-tl-sm border-0 shadow-md font-medium flex items-center gap-2">
+                      <span className="font-bold">AI is thinking</span>
+                      <div className="flex gap-1 items-center mt-1">
+                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
+                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                      </div>
                     </div>
                   </div>
                 </div>
