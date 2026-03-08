@@ -535,13 +535,43 @@ app.post("/api/like-project", async (req, res) => {
       },
     );
 
+    const insertedInteraction = Array.isArray(insertResponse.data)
+      ? insertResponse.data[0] || null
+      : null;
+
+    // Some deployments may return an empty representation; verify persistence before returning success.
+    let verifiedInteraction = insertedInteraction;
+    if (!verifiedInteraction) {
+      const verifyResponse = await axios.get(
+        `${SUPABASE_URL}/rest/v1/template_interactions?user_id=eq.${encodeURIComponent(userId)}&project_id=eq.${encodeURIComponent(projectId)}&select=user_id,project_id&limit=1`,
+        { headers },
+      );
+
+      verifiedInteraction = Array.isArray(verifyResponse.data)
+        ? verifyResponse.data[0] || null
+        : null;
+    }
+
+    if (!verifiedInteraction) {
+      return res.status(500).json({
+        error:
+          "Like request acknowledged but no interaction row was persisted.",
+      });
+    }
+
+    console.log("=== LIKE PROJECT SUCCESS ===");
+    console.log("User ID:", userId);
+    console.log("Project ID:", projectId);
+    console.log("Verified interaction:", verifiedInteraction);
+    console.log("===========================");
+
     return res.status(201).json({
       success: true,
       liked: true,
       alreadyLiked: false,
-      interaction: Array.isArray(insertResponse.data)
-        ? insertResponse.data[0] || null
-        : null,
+      interaction: verifiedInteraction,
+      message: "Project liked successfully",
+      like: [verifiedInteraction],
     });
   } catch (error) {
     const status = error?.response?.status;
@@ -563,7 +593,15 @@ app.post("/api/like-project", async (req, res) => {
   }
 });
 
-app.get("/api/project-likes", async (_req, res) => {
+app.post("/api/unlike-project", async (req, res) => {
+  const { userId, projectId } = req.body || {};
+
+  if (!userId || !projectId) {
+    return res.status(400).json({
+      error: "Both userId and projectId are required.",
+    });
+  }
+
   const headers = getSupabaseRestHeaders();
   if (!headers) {
     return res.status(500).json({
@@ -572,28 +610,138 @@ app.get("/api/project-likes", async (_req, res) => {
   }
 
   try {
-    const response = await axios.get(
-      `${SUPABASE_URL}/rest/v1/template_interactions?select=project_id`,
+    const deleteResponse = await axios.delete(
+      `${SUPABASE_URL}/rest/v1/template_interactions?user_id=eq.${encodeURIComponent(userId)}&project_id=eq.${encodeURIComponent(projectId)}`,
       { headers },
     );
 
-    const rows = Array.isArray(response.data) ? response.data : [];
+    console.log("Unlike project response:", {
+      userId,
+      projectId,
+      status: deleteResponse.status,
+    });
 
-    const countsByProjectId = rows.reduce((acc, row) => {
+    // Check if the interaction was actually deleted
+    const verifyResponse = await axios.get(
+      `${SUPABASE_URL}/rest/v1/template_interactions?user_id=eq.${encodeURIComponent(userId)}&project_id=eq.${encodeURIComponent(projectId)}&select=user_id,project_id&limit=1`,
+      { headers },
+    );
+
+    const stillExists =
+      Array.isArray(verifyResponse.data) && verifyResponse.data.length > 0;
+
+    if (stillExists) {
+      return res.status(500).json({
+        error: "Unlike request acknowledged but interaction still exists.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      unliked: true,
+      message: "Project unliked successfully",
+    });
+  } catch (error) {
+    const status = error?.response?.status;
+    const details = error?.response?.data || error.message;
+
+    // If already doesn't exist, treat as success
+    if (status === 404) {
+      return res.json({
+        success: true,
+        unliked: true,
+        alreadyUnliked: true,
+      });
+    }
+
+    console.error("Unlike project error:", details);
+    return res.status(500).json({
+      error: "Failed to unlike project.",
+      details,
+    });
+  }
+});
+
+app.get("/api/project-likes", async (req, res) => {
+  const { userId } = req.query;
+
+  console.log("=== /api/project-likes REQUEST ===");
+  console.log("Query params:", req.query);
+  console.log("userId from query:", userId);
+  console.log("userId type:", typeof userId);
+  console.log("================================");
+
+  const headers = getSupabaseRestHeaders();
+  if (!headers) {
+    return res.status(500).json({
+      error: "Server misconfiguration: Supabase keys are missing.",
+    });
+  }
+
+  try {
+    const supabaseResponse = await axios.get(
+      `${SUPABASE_URL}/rest/v1/template_interactions?select=project_id,user_id,liked_at&order=liked_at.asc`,
+      { headers },
+    );
+
+    const rows = Array.isArray(supabaseResponse.data)
+      ? supabaseResponse.data
+      : [];
+
+    const likeCountsByProject = rows.reduce((acc, row) => {
       const projectId = String(row?.project_id || "").trim();
       if (!projectId) return acc;
       acc[projectId] = (acc[projectId] || 0) + 1;
       return acc;
     }, {});
 
-    const likes = Object.entries(countsByProjectId).map(
+    const projectLikes = rows.map((row) => ({
+      user_id: row.user_id,
+      liked_at: row.liked_at,
+      project_id: row.project_id,
+      likeCount: likeCountsByProject[String(row.project_id || "").trim()] || 0,
+    }));
+
+    const likes = Object.entries(likeCountsByProject).map(
       ([project_id, like_count]) => ({
         project_id,
         like_count,
       }),
     );
 
-    return res.json({ likes });
+    let likedProjectIds = [];
+
+    if (userId) {
+      likedProjectIds = rows
+        .filter(
+          (row) => String(row.user_id || "").trim() === String(userId).trim(),
+        )
+        .map((row) => String(row.project_id || "").trim())
+        .filter(Boolean);
+
+      console.log("=== PROJECT LIKES API RESPONSE ===");
+      console.log("User ID requested:", userId);
+      console.log("Total rows in DB:", rows.length);
+      console.log("Liked project IDs for this user:", likedProjectIds);
+      console.log("All user_ids in DB:", [
+        ...new Set(rows.map((r) => r.user_id)),
+      ]);
+      console.log("Raw rows for debugging:", rows.slice(0, 3));
+      console.log("==================================");
+    }
+
+    const payload = {
+      likes,
+      projectLikes,
+      totalLikeCount: rows.length,
+      likeCountsByProject,
+      likedProjectIds: likedProjectIds, // Always return it, will be empty array if no userId
+    };
+
+    console.log("Sending response with keys:", Object.keys(payload));
+    console.log("likedProjectIds being sent:", payload.likedProjectIds);
+
+    return res.json(payload);
   } catch (error) {
     console.error(
       "Fetch project likes error:",
