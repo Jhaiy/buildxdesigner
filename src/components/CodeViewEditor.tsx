@@ -1046,26 +1046,6 @@ export function CodeViewEditor({
           </div>
         )}
 
-        {/* ── Info bars ── */}
-        {!isEditing && isJSFile && (
-          <div className="shrink-0 px-4 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 text-[11px] text-yellow-400/80 flex items-center gap-2">
-            <AlertCircle className="w-3 h-3 shrink-0" />
-            JS edits are saved as overrides and exported — they don't modify canvas components.
-          </div>
-        )}
-        {!isEditing && isViewPHP && (
-          <div className="shrink-0 px-4 py-1.5 bg-purple-500/10 border-b border-purple-500/20 text-[11px] text-purple-300/80 flex items-center justify-between gap-2">
-            <span>PHP edits sync <strong>adds · deletes · updates</strong> back to the canvas when you Save &amp; Sync.</span>
-            <span className="text-muted-foreground/40 shrink-0">{pageComponents.length} component{pageComponents.length !== 1 ? "s" : ""}</span>
-          </div>
-        )}
-        {!isEditing && isCustomFile && (
-          <div className="shrink-0 px-4 py-1.5 bg-green-500/10 border-b border-green-500/20 text-[11px] text-green-400/80 flex items-center gap-2">
-            <FilePlus className="w-3 h-3 shrink-0" />
-            Custom file — included in project export.
-          </div>
-        )}
-
         {/* ── Code area + component sidebar ── */}
         <div className="flex-1 overflow-hidden flex min-h-0">
 
