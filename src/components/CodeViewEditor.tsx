@@ -437,20 +437,19 @@ function generateReadableId(type: string, existingIds: string[] = []): string {
 function extractShortId(cls: string): string | null {
   const first = cls.trim().split(/\s+/)[0]
   if (!first) return null
+
   const legacy = first.match(/^comp-(.+)$/)
   if (legacy) return legacy[1]
-  if (first.includes("-")) {
-    const typePart = first.split("-")[0]
-    const knownTypes = [
-      "navbar","hero","footer","heading","text","paragraph","button","image",
-      "input","textarea","select","checkbox","card","container","grid","form",
-      "divider","accordion","tabs","modal","alert","table","gallery","carousel",
-      "section","sign","paymongo","video","radio",
-    ]
-    if (knownTypes.some(t => typePart === t || first.startsWith(t + "-"))) {
-      return first
-    }
+  const utilityPattern = /^(p|m|px|py|mx|my|pt|pb|pl|pr|mt|mb|ml|mr|w|h|text|bg|border|rounded|flex|grid|gap|space|items|justify|font|leading|tracking|shadow|opacity|z|top|left|right|bottom|col|row|sr)-/
+  if (utilityPattern.test(first) && !first.match(/^(text|border|bg|grid|flex)-[a-zA-Z]/)) {
+    return null
   }
+
+  // Accept any valid CSS identifier with at least one letter
+  if (/^[a-zA-Z][a-zA-Z0-9-_]*$/.test(first) && first.length >= 2) {
+    return first
+  }
+
   return null
 }
 
@@ -650,65 +649,80 @@ function parsePHPToFullComponentList(
   const byId = new Map<string, ComponentData>()
   for (const c of existingComponents) byId.set(sanitizeId(c.id), c)
 
-  // Collect every candidate match: { index, sid, type, parsedProps }
   type Candidate = { index: number; sid: string; type: string; parsedProps: Record<string, any> }
   const candidates: Candidate[] = []
-  const seenSids = new Set<string>() // dedupe by sid, not by char index
+  const seenSids = new Set<string>()
 
   const push = (index: number, sid: string, type: string, parsedProps: Record<string, any>) => {
     let uniqueSid = sid
     if (seenSids.has(sid)) {
-      // Duplicate class — generate a unique sid so it isn't silently dropped
       let counter = 2
-      while (seenSids.has(`${sid}-${counter}`)) counter++
-      uniqueSid = `${sid}-${counter}`
+      while (seenSids.has(`${sid}--${counter}`)) counter++
+      uniqueSid = `${sid}--${counter}`
     }
     seenSids.add(uniqueSid)
     candidates.push({ index, sid: uniqueSid, type, parsedProps })
   }
 
-  // Headings
-  for (const m of phpCode.matchAll(/<h([1-6])[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/h[1-6]>/gi)) {
+  // Blank out inner content of block-level components so nested elements
+  // (nav-toggle button, <p> inside hero, etc.) don't parse as separate components.
+  let cleanedCode = phpCode
+  const blockPatterns: RegExp[] = [
+    /<nav[^>]*class="[^"]*"[^>]*>[\s\S]*?<\/nav>/gi,
+    /<section[^>]*class="[^"]*"[^>]*>[\s\S]*?<\/section>/gi,
+    /<footer[^>]*class="[^"]*"[^>]*>[\s\S]*?<\/footer>/gi,
+  ]
+  for (const pattern of blockPatterns) {
+    cleanedCode = cleanedCode.replace(pattern, (match) => {
+      const openEnd = match.indexOf(">") + 1
+      const closeStart = match.lastIndexOf("</")
+      if (openEnd <= 0 || closeStart <= openEnd) return match
+      return match.slice(0, openEnd) + " ".repeat(closeStart - openEnd) + match.slice(closeStart)
+    })
+  }
+
+  // Headings (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<h([1-6])[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/h[1-6]>/gi)) {
     const sid = extractShortId(m[2]); if (!sid) continue
     push(m.index ?? 0, sid, "heading", { content: stripTags(m[3].trim()), level: parseInt(m[1]), className: extractClassName(m[2]) })
   }
 
-  // <p> tags
-  for (const m of phpCode.matchAll(/<p[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/p>/gi)) {
+  // <p> tags (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<p[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/p>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "text", { content: stripTags(m[2].trim()), className: extractClassName(m[1]) })
   }
 
-  // Buttons
-  for (const m of phpCode.matchAll(/<button[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/button>/gi)) {
+  // Buttons (cleanedCode — nav-toggle inside <nav> is already blanked out)
+  for (const m of cleanedCode.matchAll(/<button[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/button>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "button", { text: stripTags(m[2].trim()), content: stripTags(m[2].trim()), className: extractClassName(m[1]) })
   }
 
-  // Images (src before class)
-  for (const m of phpCode.matchAll(/<img[^>]*src="([^"]*)"[^>]*class="([^"]*)"[^>]*\/?>/gi)) {
+  // Images src before class (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<img[^>]*src="([^"]*)"[^>]*class="([^"]*)"[^>]*\/?>/gi)) {
     const sid = extractShortId(m[2]); if (!sid) continue
     push(m.index ?? 0, sid, "image", { src: m[1], className: extractClassName(m[2]) })
   }
-  // Images (class before src)
-  for (const m of phpCode.matchAll(/<img[^>]*class="([^"]*)"[^>]*src="([^"]*)"[^>]*\/?>/gi)) {
+  // Images class before src (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<img[^>]*class="([^"]*)"[^>]*src="([^"]*)"[^>]*\/?>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "image", { src: m[2], className: extractClassName(m[1]) })
   }
 
-  // Inputs
-  for (const m of phpCode.matchAll(/<input[^>]*class="([^"]*)"[^>]*placeholder="([^"]*)"[^>]*\/?>/gi)) {
+  // Inputs (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<input[^>]*class="([^"]*)"[^>]*placeholder="([^"]*)"[^>]*\/?>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "input", { placeholder: m[2], className: extractClassName(m[1]) })
   }
 
-  // Textareas
-  for (const m of phpCode.matchAll(/<textarea[^>]*class="([^"]*)"[^>]*placeholder="([^"]*)"[^>]*>/gi)) {
+  // Textareas (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<textarea[^>]*class="([^"]*)"[^>]*placeholder="([^"]*)"[^>]*>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "textarea", { placeholder: m[2], className: extractClassName(m[1]) })
   }
 
-  // Navbars
+  // Navbars (original phpCode — needs inner content to parse brand/links)
   for (const m of phpCode.matchAll(/<nav[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/nav>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     const brand = (m[2].match(/<div class="nav-brand">([\s\S]*?)<\/div>/i)?.[1]) ?? "Brand"
@@ -716,7 +730,7 @@ function parsePHPToFullComponentList(
     push(m.index ?? 0, sid, "navbar", { brand: stripTags(brand.trim()), links: links.length ? links : ["Home","About","Contact"] })
   }
 
-  // Hero sections
+  // Hero sections (original phpCode — needs inner content)
   for (const m of phpCode.matchAll(/<section[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/section>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "hero", {
@@ -726,14 +740,14 @@ function parsePHPToFullComponentList(
     })
   }
 
-  // Footers
+  // Footers (original phpCode — needs inner content)
   for (const m of phpCode.matchAll(/<footer[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/footer>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "footer", { copyright: stripTags((m[2].match(/<p>([\s\S]*?)<\/p>/i)?.[1] ?? "").trim()) })
   }
 
-  // Section headings (<div> with <h2> inside)
-  for (const m of phpCode.matchAll(/<div[^>]*class="([^"]*)"[^>]*>\s*<h2>([\s\S]*?)<\/h2>([\s\S]*?)<\/div>/gi)) {
+  // Section headings: <div> with <h2> inside (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<div[^>]*class="([^"]*)"[^>]*>\s*<h2>([\s\S]*?)<\/h2>([\s\S]*?)<\/div>/gi)) {
     const sid = extractShortId(m[1]); if (!sid) continue
     push(m.index ?? 0, sid, "section-heading", {
       title:    stripTags(m[2].trim()),
@@ -741,8 +755,8 @@ function parsePHPToFullComponentList(
     })
   }
 
-  // Explicit data-component-type (class before attr)
-  for (const m of phpCode.matchAll(/<([a-z][a-z0-9-]*)[^>]*class="([^"]*)"[^>]*data-component-type="([^"]+)"[^>]*>/gi)) {
+  // Explicit data-component-type — class before attr (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<([a-z][a-z0-9-]*)[^>]*class="([^"]*)"[^>]*data-component-type="([^"]+)"[^>]*>/gi)) {
     const sid = extractShortId(m[2]); if (!sid) continue
     const declaredType = m[3].toLowerCase().trim()
     if (KNOWN_COMPONENT_TYPES.has(declaredType)) {
@@ -752,8 +766,8 @@ function parsePHPToFullComponentList(
       push(m.index ?? 0, sid, "__unknown__", { unknownType: declaredType, className: extractClassName(m[2]), htmlTag: m[1] })
     }
   }
-  // Explicit data-component-type (attr before class)
-  for (const m of phpCode.matchAll(/<([a-z][a-z0-9-]*)[^>]*data-component-type="([^"]+)"[^>]*class="([^"]*)"[^>]*>/gi)) {
+  // Explicit data-component-type — attr before class (cleanedCode)
+  for (const m of cleanedCode.matchAll(/<([a-z][a-z0-9-]*)[^>]*data-component-type="([^"]+)"[^>]*class="([^"]*)"[^>]*>/gi)) {
     const sid = extractShortId(m[3]); if (!sid) continue
     const declaredType = m[2].toLowerCase().trim()
     if (KNOWN_COMPONENT_TYPES.has(declaredType)) {
@@ -779,7 +793,7 @@ function parsePHPToFullComponentList(
       style:    existing?.style
         ? normalizeStyleValues(existing.style)
         : normalizeStyleValues({ ...defs.style }),
-      position: existing?.position ?? autoPosition(result.length), // existing.position ALWAYS wins
+      position: existing?.position ?? autoPosition(result.length),
       page_id:  pageId,
       children: existing?.children,
     })
@@ -1050,19 +1064,23 @@ export function CodeViewEditor({
     setMissingJS(missJs)
   }, [effectiveFiles])
 
-  const migrateComponentIds = useCallback((comps: ComponentData[]): { migrated: ComponentData[]; changed: number } => {
-    const usedNew = new Set(comps.map(c => c.id))
-    let changed = 0
-    const migrated = comps.map(c => {
-      if (/^[a-z][a-z0-9-]*-[a-z][a-z0-9-]*$/.test(c.id) && !c.id.match(/[0-9]{5,}/)) return c
-      usedNew.delete(c.id)
-      const newId = generateReadableId(c.type, [...usedNew])
-      usedNew.add(newId)
-      changed++
-      return { ...c, id: newId }
-    })
-    return { migrated, changed }
-  }, [])
+const migrateComponentIds = useCallback((comps: ComponentData[]): { migrated: ComponentData[]; changed: number } => {
+  const usedNew = new Set(comps.map(c => c.id))
+  let changed = 0
+  const migrated = comps.map(c => {
+    // Only migrate pure numeric IDs (legacy timestamp IDs like "1234567890")
+    // Everything else — "text-content", "text-content-2", "container-wrapper",
+    // "text-content--2" (our dedup format) — keep as-is
+    const isPureNumeric = /^\d+$/.test(c.id)
+    if (!isPureNumeric) return c
+    usedNew.delete(c.id)
+    const newId = generateReadableId(c.type, [...usedNew])
+    usedNew.add(newId)
+    changed++
+    return { ...c, id: newId }
+  })
+  return { migrated, changed }
+}, [])
 
   const handleManualSync = useCallback(() => {
     if (!selectedFile || !isViewPHP || !onCodeChange) return
@@ -1144,28 +1162,36 @@ export function CodeViewEditor({
     toast.success(`${type} snippet added — Sync to canvas to apply.`)
   }
 
-  const handleDeleteComponent = useCallback((compId: string) => {
-    if (!onCodeChange) return
-    const sid = sanitizeId(compId)
-    onCodeChange(componentsRef.current.filter(c => sanitizeId(c.id) !== sid))
-    setFileOverrides(prev => {
-      const next = { ...prev }
-      for (const [path, content] of Object.entries(next)) {
-        if (path.endsWith(".php")) {
-          next[path] = content
-            .replace(new RegExp(`[ \\t]*<[^>]+class="${sid}[^"]*"[\\s\\S]*?(?:<\\/[a-zA-Z]+>|\\/>)\\n?`, "gi"), "")
-            .replace(new RegExp(`[ \\t]*<[^>]+class="comp-${sid}[^"]*"[\\s\\S]*?(?:<\\/[a-zA-Z]+>|\\/>)\\n?`, "gi"), "")
-        }
-        if (path.endsWith(".css")) {
-          next[path] = content
-            .replace(new RegExp(`\\.${sid}[^{]*\\{[^}]*\\}\\n?`, "gi"), "")
-            .replace(new RegExp(`\\.comp-${sid}[a-zA-Z0-9_-]*\\s*\\{[^}]*\\}\\n?`, "gi"), "")
-        }
+const handleDeleteComponent = useCallback((compId: string) => {
+  if (!onCodeChange) return
+  const sid = sanitizeId(compId)
+
+  console.log("[delete] compId:", compId)
+  console.log("[delete] sid:", sid)
+  console.log("[delete] all component ids:", componentsRef.current.map(c => ({ id: c.id, sanitized: sanitizeId(c.id) })))
+  console.log("[delete] filtered result:", componentsRef.current.filter(c => sanitizeId(c.id) !== sid).map(c => c.id))
+
+  onCodeChange(componentsRef.current.filter(c => sanitizeId(c.id) !== sid))
+  setFileOverrides(prev => {
+    const next = { ...prev }
+    for (const [path, content] of Object.entries(next)) {
+      if (path.endsWith(".php")) {
+        const before = content
+        next[path] = content
+          .replace(new RegExp(`[ \\t]*<[^>]+class="${sid}[^"]*"[\\s\\S]*?(?:<\\/[a-zA-Z]+>|\\/>)\\n?`, "gi"), "")
+          .replace(new RegExp(`[ \\t]*<[^>]+class="comp-${sid}[^"]*"[\\s\\S]*?(?:<\\/[a-zA-Z]+>|\\/>)\\n?`, "gi"), "")
+        console.log("[delete] php changed:", before !== next[path], "file:", path)
       }
-      return next
-    })
-    toast.success("Component deleted from canvas.")
-  }, [onCodeChange])
+      if (path.endsWith(".css")) {
+        next[path] = content
+          .replace(new RegExp(`\\.${sid}[^{]*\\{[^}]*\\}\\n?`, "gi"), "")
+          .replace(new RegExp(`\\.comp-${sid}[a-zA-Z0-9_-]*\\s*\\{[^}]*\\}\\n?`, "gi"), "")
+      }
+    }
+    return next
+  })
+  toast.success("Component deleted from canvas.")
+}, [onCodeChange])
 
   const handleSave = useCallback(() => {
     if (!selectedFile) return

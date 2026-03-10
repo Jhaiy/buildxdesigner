@@ -104,10 +104,10 @@ function useCollaborationLogic({
   }, [getOrInitDoc, setState]);
 
   useEffect(() => {
-    if (state.currentView !== "editor") {
+    if (state.currentView !== "editor" && !state.hasUnsavedChanges) {
       hydratedProjectRef.current = null;
     }
-  }, [state.currentView]);
+  }, [state.currentView, state.hasUnsavedChanges]);
 
   useEffect(() => {
     if (state.currentView !== "editor") return;
@@ -158,27 +158,22 @@ function useCollaborationLogic({
 
       const isLocalChanges = consumeLocalChangeFlag();
 
+      // Only skip if we're hydrating and Yjs is genuinely empty on init
       if (isHydratingRef.current && uniqueComponents.length === 0) return;
 
-      // FIX: Removed the overly-aggressive safety guard that was silently
-      // swallowing legitimate updates (e.g. new components from CodeViewEditor
-      // sync). The old guard blocked any update where uniqueComponents was empty
-      // and prev had content, even for valid local changes. Instead, we only
-      // skip the update if it's genuinely a transient empty-state during
-      // hydration (already handled by the isHydratingRef check above).
+      // Skip if local change fired with empty array (transient Yjs state)
+      // but NOT if we're intentionally clearing (e.g. clearCanvas)
       if (isLocalChanges && uniqueComponents.length === 0) return;
-      setState((prev) => {
-        // If this is a local change and Yjs somehow returns fewer components
-        // than we already have, keep the existing array to avoid a flash.
-        if (isLocalChanges && uniqueComponents.length < prev.components.length) {
-          return { ...prev, hasUnsavedChanges: true };
-        }
-        return {
-          ...prev,
-          components: uniqueComponents,
-          hasUnsavedChanges: isLocalChanges ? true : prev.hasUnsavedChanges,
-        };
-      });
+
+      // Always apply the update — this correctly handles both additions
+      // and deletions. The previous guard that blocked updates when
+      // uniqueComponents.length < prev.components.length was preventing
+      // deletions from reflecting in the UI without a page reload.
+      setState((prev) => ({
+        ...prev,
+        components: uniqueComponents,
+        hasUnsavedChanges: isLocalChanges ? true : prev.hasUnsavedChanges,
+      }));
     };
 
     const handleYPagesChange = () => {
