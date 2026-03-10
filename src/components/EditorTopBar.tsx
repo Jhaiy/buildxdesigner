@@ -4,7 +4,7 @@ import type React from "react";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "./ui/button";
 import {
-  Download,
+
   MoreHorizontal,
   ArrowLeft,
   Play,
@@ -84,7 +84,7 @@ interface EditorTopBarProps {
   onPublish: () => void;
   onShare: () => void;
   onPreview?: () => void;
-  onExport?: () => void;
+ 
   onGoToDashboard?: () => void;
   isSaving?: boolean;
   lastSaved?: Date | null;
@@ -216,7 +216,7 @@ export function EditorTopBar({
   onPublish,
   onShare,
   onPreview,
-  onExport,
+ 
   onGoToDashboard,
   isSaving = false,
   lastSaved = null,
@@ -1643,17 +1643,7 @@ export function EditorTopBar({
           </Button>
         )}
 
-        {onExport && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onExport}
-            className="h-9 px-3 text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
-          >
-            <Download className="w-4 h-4" />
-          </Button>
-        )}
-
+      
         {isSupabaseConnected ? (
           <Button
             variant="ghost"

@@ -4,7 +4,7 @@ import type React from "react"
 import { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { Button } from "./ui/button"
 import {
-  Copy, ChevronRight, ChevronDown, File, Save, Pencil, X,
+    Copy, ChevronRight, ChevronDown, File, Save, Pencil, X, Download,
   CheckCircle2, RefreshCw, AlertCircle, Plus, Trash2, FilePlus,
   FolderPlus, FileCode, FileText, Globe, ChevronDown as CaretDown,
 } from "lucide-react"
@@ -873,6 +873,39 @@ export function CodeViewEditor({
 
   const totalCustomFiles = Object.keys(customFiles).length
 
+  const handleDownloadZip = useCallback(async () => {
+    try {
+      const JSZip = (await import("jszip")).default
+      const zip = new JSZip()
+      const safeProjectName = (projectName || "php-builder")
+        .trim()
+        .replace(/[^a-z0-9-]/gi, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase() || "php-builder"
+
+      Object.entries(effectiveFiles).forEach(([filePath, content]) => {
+        zip.file(filePath, content)
+      })
+
+      const blob = await zip.generateAsync({ type: "blob" })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `${safeProjectName}.zip`
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      URL.revokeObjectURL(url)
+
+      toast.success("Project zip downloaded")
+    } catch (error) {
+      console.error("Failed to download project zip", error)
+      toast.error("Failed to download project zip")
+    }
+  }, [effectiveFiles, projectName])
+
+
   // ════════════════════════════════════════════
   // RENDER
   // ════════════════════════════════════════════
@@ -1002,6 +1035,12 @@ export function CodeViewEditor({
                   onClick={() => { navigator.clipboard.writeText(readOnlyContent); toast.success("Copied!") }}>
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
+                 <Button size="sm" variant="outline"
+                  className="h-7 px-2.5 gap-1 text-xs border-[#3a3a3a] bg-[#2a2a2a] hover:bg-[#333] text-muted-foreground hover:text-white"
+                  onClick={handleDownloadZip}
+                  title="Download project as zip">
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
               </>
             ) : (
               <>
@@ -1028,9 +1067,7 @@ export function CodeViewEditor({
         {/* ── Add Component Panel ── */}
         {showAddPanel && !isEditing && (
           <div className="shrink-0 border-b border-[#2b2b2b] bg-[#161616] px-4 py-3 animate-in slide-in-from-top-1 duration-150">
-            <p className="text-[11px] text-muted-foreground mb-2.5 font-semibold uppercase tracking-wider">
-              Insert Component into PHP
-            </p>
+            
             <div className="flex flex-wrap gap-1.5">
               {ADD_COMPONENT_TYPES.map(({ type, label, icon }) => (
                 <button key={type}
@@ -1053,12 +1090,7 @@ export function CodeViewEditor({
             JS edits are saved as overrides and exported — they don't modify canvas components.
           </div>
         )}
-        {!isEditing && isViewPHP && (
-          <div className="shrink-0 px-4 py-1.5 bg-purple-500/10 border-b border-purple-500/20 text-[11px] text-purple-300/80 flex items-center justify-between gap-2">
-            <span>PHP edits sync <strong>adds · deletes · updates</strong> back to the canvas when you Save &amp; Sync.</span>
-            <span className="text-muted-foreground/40 shrink-0">{pageComponents.length} component{pageComponents.length !== 1 ? "s" : ""}</span>
-          </div>
-        )}
+       
         {!isEditing && isCustomFile && (
           <div className="shrink-0 px-4 py-1.5 bg-green-500/10 border-b border-green-500/20 text-[11px] text-green-400/80 flex items-center gap-2">
             <FilePlus className="w-3 h-3 shrink-0" />

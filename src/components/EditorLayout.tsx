@@ -19,7 +19,7 @@ import { RemoteCursors } from "./RemoteCursors";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { MobilePropertiesModal } from "./MobilePropertiesModal";
 import { PreviewModal } from "./PreviewModal";
-import { CodeExportModal } from "./CodeExportModal";
+
 import { TemplateModal } from "./TemplateModal";
 import { PublishModal } from "./PublishModal";
 import { ShareModal } from "./ShareModal";
@@ -51,7 +51,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
     reorderComponent,
     moveLayer,
     togglePreview,
-    toggleCodeExport,
+
     toggleTemplates,
     togglePublishModal,
     toggleShareModal,
@@ -128,7 +128,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             onPublish={handlePublish}
             onShare={handleShare}
             onPreview={togglePreview}
-            onExport={toggleCodeExport}
+           
             onGoToDashboard={goToDashboard}
             isSaving={state.isSaving}
             lastSaved={state.lastSaved}
@@ -510,15 +510,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             />
           )}
 
-          {state.showCodeExport && (
-            <CodeExportModal
-              components={state.exportSnapshot}
-              pages={state.pages}
-              projectName={state.projectName}
-              activePageId={state.activePageId}
-              onClose={toggleCodeExport}
-            />
-          )}
+         
 
           {state.showTemplates && (
             <TemplateModal
