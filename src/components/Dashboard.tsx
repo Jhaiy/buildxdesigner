@@ -96,6 +96,32 @@ interface ProfileDisplayData {
   avatarUrl: string | null;
 }
 
+const firstNonEmptyString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return null;
+};
+
+const resolveSessionAvatar = (user: any): string | null => {
+  const metadata = (user?.user_metadata || {}) as Record<string, unknown>;
+  const googleIdentity = Array.isArray(user?.identities)
+    ? user.identities.find((identity: any) => identity?.provider === "google")
+    : null;
+  const identityData = (googleIdentity?.identity_data || {}) as Record<string, unknown>;
+
+  return firstNonEmptyString(
+    metadata.avatar_url,
+    metadata.avatarUrl,
+    metadata.picture,
+    identityData.avatar_url,
+    identityData.picture,
+    user?.picture,
+  );
+};
+
 interface TemplateCardData {
   id: string;
   projectId?: string;
@@ -336,6 +362,11 @@ export function Dashboard({
   const userAvatarUrl = profileData.avatarUrl;
   const userInitial =
     profileData.fullName.substring(0, 2).toUpperCase() || "GU";
+     const resolvedSidebarAvatarUrl =
+    userAvatarUrl ||
+    (userEmail
+      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(userEmail)}&background=2563eb&color=ffffff&bold=true`
+      : undefined);
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]); // State for real projects
@@ -1011,23 +1042,34 @@ export function Dashboard({
 
         if (!mounted) return;
 
-        if (profileError || !fullProfile) {
-          const user = session.user;
-          const metadata = user.user_metadata as { full_name?: string };
-
+        const user = session.user;
+        const metadata = (user.user_metadata || {}) as Record<string, unknown>;
+        const sessionAvatarUrl = resolveSessionAvatar(user);
+  if (profileError || !fullProfile) {
           setProfileData({
             userId: user.id,
-            fullName: metadata.full_name || user.email?.split("@")[0] || "User",
+            fullName:
+              firstNonEmptyString(
+                metadata.full_name,
+                metadata.name,
+                user.email?.split("@")[0],
+              ) || "User",
             email: user.email || "",
-            avatarUrl: null,
+             avatarUrl: sessionAvatarUrl,
           });
           console.error("Failed to load full profile data:", profileError);
         } else {
           setProfileData({
             userId: fullProfile.user_id,
-            fullName: fullProfile.fullName,
+             fullName:
+              firstNonEmptyString(
+                fullProfile.fullName,
+                metadata.full_name,
+                metadata.name,
+                fullProfile.email?.split("@")?.[0],
+              ) || "User",
             email: fullProfile.email,
-            avatarUrl: fullProfile.avatarUrl,
+             avatarUrl: firstNonEmptyString(fullProfile.avatarUrl, sessionAvatarUrl),
           });
         }
       } else {
@@ -2610,7 +2652,7 @@ export function Dashboard({
                 <Avatar className="h-8 w-8 ring-2 ring-blue-500/50 shrink-0">
                   {/* Use actual avatar URL from Supabase Storage */}
                   <AvatarImage
-                    src={userAvatarUrl || undefined}
+                   src={resolvedSidebarAvatarUrl}
                     alt={userName}
                   />
                   <AvatarFallback className="bg-linear-to-br from-blue-600 to-violet-600 text-white text-sm">
