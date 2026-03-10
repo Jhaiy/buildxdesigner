@@ -25,6 +25,7 @@ import {
   useNavigate,
   matchPath,
 } from "react-router-dom";
+import { isOnboardingRequired } from "./utils/onboarding";
 
 // Views
 import { LandingPage } from "./components/LandingPage";
@@ -74,48 +75,90 @@ const getPathFromState = (view: string, projectId: string | null) => {
 const EDITOR_TOUR_STEPS = [
   {
     title: "Welcome to BuildX Designer! 🎉",
-    description: "Let's take a quick tour to get you started with building your first website.",
+    description:
+      "Let's take a quick tour to get you started with building your first website.",
   },
   {
     element: "#sidebar-palette",
     title: "Components Palette",
-    description: "This is your toolbox! Drag any component from here onto the canvas to start building your website.",
+    description:
+      "This is your toolbox! Drag any component from here onto the canvas to start building your website.",
     side: "right" as const,
     align: "start" as const,
   },
   {
     element: "#canvas-area",
     title: "Canvas Area",
-    description: "This is your workspace. Drop components here, resize them, and arrange them to create your layout.",
+    description:
+      "This is your workspace. Drop components here, resize them, and arrange them to create your layout.",
     side: "top" as const,
     align: "center" as const,
   },
   {
     element: "#properties-panel",
     title: "Properties Panel",
-    description: "Click on any component on the canvas to edit its properties here - change colors, text, spacing, and more!",
+    description:
+      "Click on any component on the canvas to edit its properties here - change colors, text, spacing, and more!",
     side: "left" as const,
     align: "start" as const,
   },
   {
     element: "#toolbar-top",
     title: "Toolbar",
-    description: "Use these tools to undo, redo, preview your site, and export your work when you're done.",
+    description:
+      "Use these tools to undo, redo, preview your site, and export your work when you're done.",
     side: "bottom" as const,
     align: "center" as const,
   },
   {
     title: "You're Ready! 🎉",
-    description: "That's it! Start creating by dragging components onto the canvas. Have fun building!",
+    description:
+      "That's it! Start creating by dragging components onto the canvas. Have fun building!",
   },
 ];
+
+const ONBOARDING_SESSION_INTENT_KEY = "buildxdesigner:auth-intent";
+const ONBOARDING_COMPLETED_PREFIX = "buildxdesigner:onboarding-completed:";
+
+const getOnboardingCompletedKey = (userId: string) =>
+  `${ONBOARDING_COMPLETED_PREFIX}${userId}`;
+
+const isLikelyNewUser = (session?: {
+  user?: { created_at?: string; last_sign_in_at?: string };
+}) => {
+  const createdAt = session?.user?.created_at;
+  const lastSignInAt = session?.user?.last_sign_in_at;
+
+  if (!createdAt || !lastSignInAt) return false;
+
+  const createdTime = new Date(createdAt).getTime();
+  const lastSignInTime = new Date(lastSignInAt).getTime();
+
+  if (Number.isNaN(createdTime) || Number.isNaN(lastSignInTime)) {
+    return false;
+  }
+
+  return Math.abs(lastSignInTime - createdTime) < 60_000;
+};
 
 function AppRoutes({ editor }: { editor: EditorController }) {
   const location = useLocation();
   const navigate = useNavigate();
   const isSyncingFromPath = useRef(false);
   const isInitialMount = useRef(true);
+  const onboardingCheckUserIdRef = useRef<string | null>(null);
   const [showEditorTour, setShowEditorTour] = useState(false);
+  // Debug logging
+  useEffect(() => {
+    const userId = editor.currentUser?.id;
+    if (userId) {
+      console.log(
+        "[Onboarding Debug] isOnboardingRequired:",
+        isOnboardingRequired(userId),
+      );
+      console.log("[Onboarding Debug] showOnboarding:", editor.showOnboarding);
+    }
+  }, [editor.currentUser?.id, editor.showOnboarding]);
 
   const {
     state,
@@ -136,7 +179,12 @@ function AppRoutes({ editor }: { editor: EditorController }) {
   } = editor;
 
   const handleAuthenticatedSession = async (session?: {
-    user?: { user_metadata?: Record<string, unknown>; id?: string };
+    user?: {
+      user_metadata?: Record<string, unknown>;
+      id?: string;
+      created_at?: string;
+      last_sign_in_at?: string;
+    };
   }) => {
     const userId = session?.user?.id;
 
@@ -145,24 +193,37 @@ function AppRoutes({ editor }: { editor: EditorController }) {
       return;
     }
 
+    const authIntent = sessionStorage.getItem(ONBOARDING_SESSION_INTENT_KEY);
+    const onboardingEligible =
+      authIntent === "signup" || isLikelyNewUser(session);
+
     try {
       const apiUrl = import.meta.env.VITE_API_URL;
-      const response = await fetch(`${apiUrl}/api/onboarding-data`, {
-        method: "POST",
+      const response = await fetch(`${apiUrl}/api/onboarding-data/${userId}`, {
+        method: "GET",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          userId: userId,
-        }),
       });
 
       if (!response.ok) {
-        setShowOnboarding(true);
+        if (onboardingEligible) {
+          setShowOnboarding(true);
+          return;
+        }
+
+        enterDashboard();
         return;
       }
 
       const data = await response.json();
+
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        setShowOnboarding(true);
+        return;
+      }
+
+      enterDashboard();
 
       const hasValue = (value: unknown) =>
         value !== null && value !== undefined && String(value).trim() !== "";
@@ -179,13 +240,6 @@ function AppRoutes({ editor }: { editor: EditorController }) {
           record.team_size,
         ].some(hasValue);
       };
-
-      if (Array.isArray(data) && data.length > 0) {
-        if (hasAnswerFields(data[0])) {
-          enterDashboard();
-          return;
-        }
-      }
 
       const topLevelRecord = data as Record<string, unknown>;
       const onboardingPayload =
@@ -213,14 +267,27 @@ function AppRoutes({ editor }: { editor: EditorController }) {
         hasAnswerFields(topLevelRecord);
 
       if (hasOnboardingData) {
+        localStorage.setItem(getOnboardingCompletedKey(userId), "true");
         enterDashboard();
         return;
       }
 
-      setShowOnboarding(true);
+      if (onboardingEligible) {
+        setShowOnboarding(true);
+        return;
+      }
+
+      enterDashboard();
     } catch (error) {
       console.error("Error checking onboarding status:", error);
-      setShowOnboarding(true);
+      if (onboardingEligible) {
+        setShowOnboarding(true);
+        return;
+      }
+
+      enterDashboard();
+    } finally {
+      sessionStorage.removeItem(ONBOARDING_SESSION_INTENT_KEY);
     }
   };
 
@@ -254,6 +321,11 @@ function AppRoutes({ editor }: { editor: EditorController }) {
     if (authLoading) return;
     const userId = currentUser?.id;
     if (!userId) return;
+    if (onboardingCheckUserIdRef.current === userId) {
+      return;
+    }
+
+    onboardingCheckUserIdRef.current = userId;
 
     void handleAuthenticatedSession({ user: { id: userId } });
   }, [authLoading, currentUser?.id]);
@@ -437,6 +509,12 @@ function AppRoutes({ editor }: { editor: EditorController }) {
     return (
       <OnboardingPage
         onComplete={() => {
+          if (currentUser?.id) {
+            localStorage.setItem(
+              getOnboardingCompletedKey(currentUser.id),
+              "true",
+            );
+          }
           setShowOnboarding(false);
           enterDashboard();
         }}

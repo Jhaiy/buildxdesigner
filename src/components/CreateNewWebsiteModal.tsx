@@ -788,7 +788,7 @@ export function CreateNewWebsiteModal({
                         <Sparkles className="w-5 h-5 text-violet-600" />
                         Recommended Template
                       </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                         {recommendedTemplates.slice(0, 3).map((template) => (
                           <Card
                             key={template.id}
@@ -861,7 +861,7 @@ export function CreateNewWebsiteModal({
                     </div>
                   )}
                   {filteredTemplates.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                       {filteredTemplates.map((template) => (
                         <Card
                           key={template.id}

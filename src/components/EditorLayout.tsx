@@ -11,6 +11,7 @@ import {
   Monitor,
   Laptop,
   Smartphone,
+  Sparkles,
 } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Canvas } from "./Canvas";
@@ -18,7 +19,7 @@ import { RemoteCursors } from "./RemoteCursors";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { MobilePropertiesModal } from "./MobilePropertiesModal";
 import { PreviewModal } from "./PreviewModal";
-import { CodeExportModal } from "./CodeExportModal";
+
 import { TemplateModal } from "./TemplateModal";
 import { PublishModal } from "./PublishModal";
 import { ShareModal } from "./ShareModal";
@@ -50,7 +51,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
     reorderComponent,
     moveLayer,
     togglePreview,
-    toggleCodeExport,
+
     toggleTemplates,
     togglePublishModal,
     toggleShareModal,
@@ -119,7 +120,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
     <DndProvider backend={HTML5Backend}>
       <TooltipProvider>
         <div className="editor-gradient-surface h-screen flex flex-col overflow-hidden">
-          {/* Editor Top Bar */}
           <EditorTopBar
             currentUser={state.currentUser}
             isSupabaseConnected={state.isSupabaseConnected}
@@ -128,7 +128,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             onPublish={handlePublish}
             onShare={handleShare}
             onPreview={togglePreview}
-            onExport={toggleCodeExport}
+           
             onGoToDashboard={goToDashboard}
             isSaving={state.isSaving}
             lastSaved={state.lastSaved}
@@ -182,7 +182,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
           />
 
           <div className="flex-1 overflow-hidden flex min-h-0 relative">
-            {/* Left Sidebar Toggle Button */}
             {!state.isLeftSidebarVisible && (
               <button
                 onClick={() =>
@@ -195,9 +194,8 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
               </button>
             )}
 
-            {/* Left Sidebar */}
             <div
-              className={`shrink-0 bg-card border-r border-border overflow-hidden relative transition-all duration-300 ease-in-out ${
+              className={`shrink-0 bg-card border-r border-border overflow-hidden relative ${
                 state.isLeftSidebarVisible ? "" : "w-0 border-r-0"
               }`}
               style={{
@@ -208,7 +206,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             >
               {state.isLeftSidebarVisible && (
                 <>
-                  {/* SYMMETRY BUTTON: Positioned top-right to match Right Sidebar's top-left */}
                   <button
                     onClick={() =>
                       setState((prev) => ({
@@ -222,11 +219,9 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                     <ChevronLeft className="w-10 h-4" />
                   </button>
 
-                  {/* Sidebar Content: pt-0 ensures no extra top space */}
                   <div className="flex-1 overflow-auto h-full pt-0">
                     <Sidebar
                       onAddComponent={canEditProject ? addComponent : () => {}}
-                      // REMOVED onToggle here because we handle it in the layout now
                       components={state.components}
                       selectedId={state.selectedComponent}
                       onSelect={selectComponent}
@@ -240,20 +235,18 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
               )}
             </div>
 
-            {/* Left Splitter */}
             {state.isLeftSidebarVisible && (
               <div
-                className="relative shrink-0 group"
+                className="relative shrink-0 group cursor-col-resize z-40"
                 onMouseDown={handleLeftSplitterMouseDown}
                 style={{ width: "8px" }}
               >
-                <div className="absolute inset-0 cursor-col-resize">
-                  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:w-1 group-hover:bg-purple-500 transition-all" />
+                <div className="absolute inset-0">
+                  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:w-1 group-hover:bg-purple-500 transition-colors" />
                 </div>
               </div>
             )}
 
-            {/* Main Canvas / Code Area */}
             <div
               className={`flex-1 flex flex-col overflow-hidden bg-muted/20 ${state.isFullscreen ? "fullscreen-canvas" : ""}`}
             >
@@ -271,6 +264,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                         components={state.components}
                         selectedComponent={selectedComponentObject}
                         onSelectComponent={selectComponent}
+                        onAddComponent={addComponent}
                         onUpdateComponent={updateComponent}
                         onDeleteComponent={deleteComponent}
                         onReorderComponent={reorderComponent}
@@ -286,6 +280,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                         currentUser={state.currentUser}
                         readOnly={!canEditProject}
                         activePageId={state.activePageId}
+                        remoteCursors={remoteCursors}
                       />
                       <RemoteCursors
                         cursors={Array.from(remoteCursors.values())}
@@ -299,7 +294,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                       <CodeViewEditor
                         components={state.components}
                         projectName={state.projectName}
-                        // PASS THESE NEW PROPS:
                         pages={state.pages}
                         activePageId={state.activePageId}
                         onCodeChange={(newComponents) => {
@@ -311,9 +305,13 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                             hasUnsavedChanges: true,
                           }));
                         }}
-                        onPageCreate={canEditProject ? (name, path) => {
-                          editor.addPage(name, path);
-                        } : undefined}
+                        onPageCreate={
+                          canEditProject
+                            ? (name, path) => {
+                                editor.addPage(name, path);
+                              }
+                            : undefined
+                        }
                       />
                     </div>
                   )}
@@ -321,20 +319,18 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
               </div>
             </div>
 
-            {/* Right Splitter */}
             {state.isRightSidebarVisible && (
               <div
-                className="relative shrink-0 group"
+                className="relative shrink-0 group cursor-col-resize z-40"
                 onMouseDown={handleRightSplitterMouseDown}
                 style={{ width: "8px" }}
               >
-                <div className="absolute inset-0 cursor-col-resize">
-                  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:w-1 group-hover:bg-purple-500 transition-all" />
+                <div className="absolute inset-0">
+                  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border group-hover:w-1 group-hover:bg-purple-500 transition-colors" />
                 </div>
               </div>
             )}
 
-            {/* Right Sidebar Toggle Button */}
             {!state.isRightSidebarVisible && (
               <button
                 onClick={() =>
@@ -347,15 +343,15 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
               </button>
             )}
 
-            {/* Right Sidebar */}
             <div
-              className={`shrink-0 bg-card border-l border-border overflow-hidden flex flex-col transition-all duration-300 ease-in-out ${
+              className={`shrink-0 bg-card border-l border-border overflow-hidden flex flex-col ${
                 state.isRightSidebarVisible ? "" : "w-0 border-l-0"
               }`}
               style={{
                 width: state.isRightSidebarVisible
                   ? `${state.rightSidebarWidth}px`
                   : "0px",
+                minWidth: state.isRightSidebarVisible ? "350px" : "0px",
               }}
             >
               {state.isRightSidebarVisible && (
@@ -372,7 +368,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
-                  {/* Tab Navigation */}
+
                   <div className="border-b p-3 shrink-0">
                     <div className="grid grid-cols-2 gap-1 bg-muted/30 p-1 rounded-lg">
                       <button
@@ -400,29 +396,16 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                         }
                         className={`flex items-center justify-center gap-2 px-3 py-1.5 text-xs rounded-md transition-all ${
                           state.rightSidebarTab === "ai-assistant"
-                            ? "bg-card text-foreground shadow-sm"
-                            : "text-muted-foreground hover:text-foreground"
+                            ? "bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white shadow-md font-bold"
+                            : "bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 font-semibold"
                         }`}
                       >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                          />
-                        </svg>
+                        <Sparkles className="w-3.5 h-3.5" />
                         AI Assistant
                       </button>
                     </div>
                   </div>
 
-                  {/* Tab Content */}
                   <div className="flex-1 overflow-hidden w-full max-w-full">
                     {state.rightSidebarTab === "properties" && (
                       <PropertiesPanel
@@ -509,7 +492,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             </div>
           </div>
 
-          {/* Editor Footer */}
           <EditorFooter
             componentsCount={state.components.length}
             editorMode={state.editorMode}
@@ -517,7 +499,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             canvasZoom={state.canvasZoom}
           />
 
-          {/* Modals */}
           {state.showPreview && (
             <PreviewModal
               components={state.components}
@@ -529,15 +510,7 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             />
           )}
 
-          {state.showCodeExport && (
-            <CodeExportModal
-              components={state.exportSnapshot}
-              pages={state.pages}
-              projectName={state.projectName}
-              activePageId={state.activePageId}
-              onClose={toggleCodeExport}
-            />
-          )}
+         
 
           {state.showTemplates && (
             <TemplateModal
@@ -555,8 +528,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             }
           />
 
-          {/* PublishModal removed - publishing is handled by EditorTopBar's PublishSiteModal */}
-
           {state.showShareModal && (
             <ShareModal
               components={state.components}
@@ -566,7 +537,9 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
           )}
 
           {state.components.length > 0 && <ResizeTooltip />}
-          {state.components.length === 0 && <EditTooltip isCanvasEmpty={true} />}
+          {state.components.length === 0 && (
+            <EditTooltip isCanvasEmpty={true} />
+          )}
 
           {state.showAIAssistantModal && (
             <RightSidebar

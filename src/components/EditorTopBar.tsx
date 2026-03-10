@@ -4,7 +4,7 @@ import type React from "react";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "./ui/button";
 import {
-  Download,
+
   MoreHorizontal,
   ArrowLeft,
   Play,
@@ -84,7 +84,7 @@ interface EditorTopBarProps {
   onPublish: () => void;
   onShare: () => void;
   onPreview?: () => void;
-  onExport?: () => void;
+ 
   onGoToDashboard?: () => void;
   isSaving?: boolean;
   lastSaved?: Date | null;
@@ -105,6 +105,14 @@ interface EditorTopBarProps {
     email: string;
     name?: string;
     avatar_url?: string;
+     avatarUrl?: string;
+    picture?: string;
+    user_metadata?: {
+      avatar_url?: string;
+      picture?: string;
+      name?: string;
+      full_name?: string;
+    };
   } | null;
   isSupabaseConnected?: boolean;
   onPublishSuccess?: (subdomain: string) => void;
@@ -216,7 +224,7 @@ export function EditorTopBar({
   onPublish,
   onShare,
   onPreview,
-  onExport,
+ 
   onGoToDashboard,
   isSaving = false,
   lastSaved = null,
@@ -250,6 +258,24 @@ export function EditorTopBar({
   const projectNameRef = useRef<HTMLInputElement>(null);
   const publishButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+
+  const profileDisplayName =
+    currentUser?.name ||
+    currentUser?.user_metadata?.full_name ||
+    currentUser?.user_metadata?.name ||
+    currentUser?.email?.split("@")[0] ||
+    "User";
+
+  const resolvedAvatarUrl =
+    currentUser?.avatar_url ||
+    currentUser?.avatarUrl ||
+    currentUser?.picture ||
+    currentUser?.user_metadata?.avatar_url ||
+    currentUser?.user_metadata?.picture ||
+    (currentUser?.email
+      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.email)}&background=2563eb&color=ffffff&bold=true`
+      : null);
 
   // Modal states
   const [showPreferences, setShowPreferences] = useState(false);
@@ -387,6 +413,10 @@ export function EditorTopBar({
     setTempProjectName(projectName);
   }, [projectName]);
 
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [resolvedAvatarUrl]);
+
   const resolvedTemplatePublished =
     typeof isTemplatePublished === "boolean"
       ? isTemplatePublished
@@ -482,6 +512,9 @@ export function EditorTopBar({
     try {
       setIsTogglingTemplatePublish(true);
 
+      console.log("Calling endpoint:", `${API_URL}/api/insert-template-data`);
+      console.log("Payload", { projectId, userId });
+
       const response = nextChecked
         ? await fetch(`${API_URL}/api/insert-template-data`, {
             method: "POST",
@@ -499,10 +532,13 @@ export function EditorTopBar({
             }),
           });
 
-      const data = await response
-        .clone()
-        .json()
-        .catch(async () => ({ raw: await response.text().catch(() => "") }));
+      const raw = await response.text();
+      let data: any = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = { raw };
+      }
 
       console.info("[EditorTopBar] template publish toggle response", {
         status: response.status,
@@ -1637,17 +1673,7 @@ export function EditorTopBar({
           </Button>
         )}
 
-        {onExport && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onExport}
-            className="h-9 px-3 text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
-          >
-            <Download className="w-4 h-4" />
-          </Button>
-        )}
-
+      
         {isSupabaseConnected ? (
           <Button
             variant="ghost"
@@ -1691,15 +1717,20 @@ export function EditorTopBar({
           <span>Share</span>
         </Button>
 
-        {currentUser?.avatar_url ? (
+        {resolvedAvatarUrl && !avatarLoadFailed ? (
           <img
-            src={currentUser.avatar_url || "/placeholder.svg"}
-            alt="Profile"
-            className="w-9 h-9 rounded-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+            src={resolvedAvatarUrl}
+            alt={`${profileDisplayName} profile`}
+            title={currentUser?.email || profileDisplayName}
+            onError={() => setAvatarLoadFailed(true)}
+            className="w-9 h-9 rounded-full object-cover cursor-pointer hover:opacity-90 transition-opacity border border-border"
           />
         ) : (
-          <div className="w-9 h-9 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity">
-            {currentUser?.name?.[0]?.toUpperCase() ||
+         <div
+            title={currentUser?.email || profileDisplayName}
+            className="w-9 h-9 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity"
+          >
+            {profileDisplayName?.[0]?.toUpperCase() ||
               currentUser?.email?.[0]?.toUpperCase() ||
               "U"}
           </div>

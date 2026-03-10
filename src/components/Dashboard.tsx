@@ -67,6 +67,11 @@ import { generateUIAndCode } from "../services/geminiCodeGenerator";
 import { CreateNewWebsiteModal } from "./CreateNewWebsiteModal"; // Added import
 import { getApiBaseUrl } from "../utils/apiConfig";
 
+type DashboardSection = "new-chat" | "drafts" | "team" | "all" | "trash";
+
+const DASHBOARD_RETURN_SECTION_KEY = "dashboard_return_section";
+
+
 interface DashboardProps {
   onCreateFromScratch: () => void;
   onOpenTemplates: () => void;
@@ -90,6 +95,32 @@ interface ProfileDisplayData {
   email: string;
   avatarUrl: string | null;
 }
+
+const firstNonEmptyString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return null;
+};
+
+const resolveSessionAvatar = (user: any): string | null => {
+  const metadata = (user?.user_metadata || {}) as Record<string, unknown>;
+  const googleIdentity = Array.isArray(user?.identities)
+    ? user.identities.find((identity: any) => identity?.provider === "google")
+    : null;
+  const identityData = (googleIdentity?.identity_data || {}) as Record<string, unknown>;
+
+  return firstNonEmptyString(
+    metadata.avatar_url,
+    metadata.avatarUrl,
+    metadata.picture,
+    identityData.avatar_url,
+    identityData.picture,
+    user?.picture,
+  );
+};
 
 interface TemplateCardData {
   id: string;
@@ -331,6 +362,11 @@ export function Dashboard({
   const userAvatarUrl = profileData.avatarUrl;
   const userInitial =
     profileData.fullName.substring(0, 2).toUpperCase() || "GU";
+     const resolvedSidebarAvatarUrl =
+    userAvatarUrl ||
+    (userEmail
+      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(userEmail)}&background=2563eb&color=ffffff&bold=true`
+      : undefined);
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]); // State for real projects
@@ -340,9 +376,7 @@ export function Dashboard({
   // --- EXISTING DASHBOARD STATES ---
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [activeSection, setActiveSection] = useState<
-    "new-chat" | "drafts" | "team" | "all" | "trash"
-  >("new-chat");
+  const [activeSection, setActiveSection] = useState<DashboardSection>("new-chat");
   const [projectsFilter, setProjectsFilter] = useState<
     "all" | "published" | "shared"
   >("all");
@@ -402,6 +436,8 @@ export function Dashboard({
   const [editProjectCategory, setEditProjectCategory] = useState("Starter");
   const [editProjectDescription, setEditProjectDescription] = useState("");
   const [isSavingProjectEdits, setIsSavingProjectEdits] = useState(false);
+
+  
 
   useEffect(() => {
     const openSettingsTab = localStorage.getItem("open_account_settings");
@@ -1006,23 +1042,34 @@ export function Dashboard({
 
         if (!mounted) return;
 
-        if (profileError || !fullProfile) {
-          const user = session.user;
-          const metadata = user.user_metadata as { full_name?: string };
-
+        const user = session.user;
+        const metadata = (user.user_metadata || {}) as Record<string, unknown>;
+        const sessionAvatarUrl = resolveSessionAvatar(user);
+  if (profileError || !fullProfile) {
           setProfileData({
             userId: user.id,
-            fullName: metadata.full_name || user.email?.split("@")[0] || "User",
+            fullName:
+              firstNonEmptyString(
+                metadata.full_name,
+                metadata.name,
+                user.email?.split("@")[0],
+              ) || "User",
             email: user.email || "",
-            avatarUrl: null,
+             avatarUrl: sessionAvatarUrl,
           });
           console.error("Failed to load full profile data:", profileError);
         } else {
           setProfileData({
             userId: fullProfile.user_id,
-            fullName: fullProfile.fullName,
+             fullName:
+              firstNonEmptyString(
+                fullProfile.fullName,
+                metadata.full_name,
+                metadata.name,
+                fullProfile.email?.split("@")?.[0],
+              ) || "User",
             email: fullProfile.email,
-            avatarUrl: fullProfile.avatarUrl,
+             avatarUrl: firstNonEmptyString(fullProfile.avatarUrl, sessionAvatarUrl),
           });
         }
       } else {
@@ -1546,9 +1593,12 @@ export function Dashboard({
         throw deleteError;
       }
 
-      await reloadProjects();
+      
       setShowDeleteConfirmDialog(false);
       setPendingDeleteProject(null);
+
+        // Force a full refresh to avoid stale dialog overlays blocking clicks.
+      window.location.reload();
     } catch (err) {
       console.error("Failed to delete project:", err);
       setProjectsLoading(false);
@@ -2602,7 +2652,7 @@ export function Dashboard({
                 <Avatar className="h-8 w-8 ring-2 ring-blue-500/50 shrink-0">
                   {/* Use actual avatar URL from Supabase Storage */}
                   <AvatarImage
-                    src={userAvatarUrl || undefined}
+                   src={resolvedSidebarAvatarUrl}
                     alt={userName}
                   />
                   <AvatarFallback className="bg-linear-to-br from-blue-600 to-violet-600 text-white text-sm">
@@ -2658,7 +2708,7 @@ export function Dashboard({
               }`}
             >
               <Sparkles className="w-4 h-4" />
-              <span>New chat</span>
+              <span>Dashboard</span>
             </button>
 
             {/* All Projects */}
@@ -2773,73 +2823,12 @@ export function Dashboard({
           <div className="p-3 md:p-6">
             {activeSection === "new-chat" ? (
               <>
-                {/* Hero Prompt Section */}
+              
                 <div className="flex flex-col min-h-[calc(100vh-200px)]">
-                  <div className="shrink-0 py-16 px-4">
-                    <div className="w-full max-w-4xl mx-auto">
-                      <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-center text-foreground mb-8">
-                        What would you like help with?
-                      </h1>
-
-                      <div className="relative max-w-3xl mx-auto">
-                        <div className="relative flex items-center bg-background border border-border rounded-full shadow-sm hover:shadow-md hover:border-foreground/20 transition-all">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="ml-2 h-9 w-9 rounded-full hover:bg-muted shrink-0"
-                            disabled={isGenerating}
-                          >
-                            <Plus className="w-5 h-5" />
-                          </Button>
-                          <Input
-                            placeholder="Ask buildx now ..."
-                            value={aiPrompt}
-                            onChange={(e) => setAiPrompt(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (
-                                e.key === "Enter" &&
-                                aiPrompt.trim() &&
-                                !isGenerating
-                              ) {
-                                handleGenerateUI();
-                              }
-                            }}
-                            className="h-14 text-base px-4 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent rounded-full flex-1"
-                          />
-                          <Button
-                            onClick={handleGenerateUI}
-                            disabled={!aiPrompt.trim() || isGenerating}
-                            size="icon"
-                            className="mr-2 h-9 w-9 rounded-full bg-foreground text-background hover:bg-foreground/90 shrink-0"
-                          >
-                            {isGenerating ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <ArrowUp className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </div>
-
-                        {/* Generation Progress */}
-                        {isGenerating && (
-                          <div className="mt-4">
-                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-foreground transition-all duration-300"
-                                style={{ width: `${generationProgress}%` }}
-                              />
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-2 text-center">
-                              Generating your UI... {generationProgress}%
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                 
 
                   {/* Templates Section */}
-                  <div className="flex-1 px-4 pb-8">
+                   <div className="flex-1 px-4 pb-8 pt-0">
                     {/* Updated max-width for better content spacing */}
                     <div className="w-full max-w-6xl mx-auto">
                       <div className="mb-6">
@@ -2895,7 +2884,7 @@ export function Dashboard({
                           )}
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
                           {visibleRecommendedTemplates
                             .filter(
                               (template) =>
