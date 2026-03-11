@@ -1240,7 +1240,6 @@ const migrateComponentIds = useCallback((comps: ComponentData[]): { migrated: Co
   const handleInsertSnippet = (type: string) => {
     const current = isEditing ? draftContent : readOnlyContent
 
-    // Collect IDs from both canvas AND current file content
     const existingIds = [
       ...componentsRef.current.map(c => c.id),
       ...[...current.matchAll(/class="([^"\s]+)/g)].map(m => m[1]),
@@ -1249,23 +1248,26 @@ const migrateComponentIds = useCallback((comps: ComponentData[]): { migrated: Co
     const matchingComp = componentsRef.current.find(c => c.type === type)
     const snippet = generateComponentSnippet(type, existingIds, matchingComp?.props)
 
-    // Extract the class name from the generated snippet to check for duplicates
     const classMatch = snippet.match(/class="([^"\s]+)/)
     const snippetClass = classMatch?.[1]
 
-    // Guard: if a class with this ID already exists in the file, don't insert
     if (snippetClass && current.includes(`class="${snippetClass}`)) {
       toast.error(`A "${snippetClass}" component already exists in this file.`)
       return
     }
 
-    // Insert before </main> if present, otherwise before the last </div>, otherwise append
     let insertAt = current.lastIndexOf("</main>")
     if (insertAt === -1) insertAt = current.lastIndexOf("</div>")
 
     const newContent = insertAt !== -1
       ? current.slice(0, insertAt) + `  ${snippet}\n` + current.slice(insertAt)
       : current + "\n" + snippet
+
+    if (isCustomFile) {
+      setCustomFiles(prev => ({ ...prev, [selectedFile]: newContent }))
+    } else {
+      setFileOverrides(prev => ({ ...prev, [selectedFile]: newContent }))
+    }
 
     setDraftContent(newContent)
     if (!isEditing) { setIsEditing(true); setTimeout(() => textareaRef.current?.focus(), 0) }
