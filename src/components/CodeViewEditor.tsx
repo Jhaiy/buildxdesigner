@@ -334,6 +334,11 @@ const ADD_COMPONENT_TYPES = [
   { type: "table",           label: "Table",           icon: "⊞"  },
   { type: "gallery",         label: "Gallery",         icon: "⊟"  },
   { type: "carousel",        label: "Carousel",        icon: "↻"  },
+  { type: "video",           label: "Video",           icon: "▶"  },
+  { type: "group",           label: "Group",           icon: "⬚"  },
+  { type: "sign-in",         label: "Sign In",         icon: "🔑" },
+  { type: "sign-up",         label: "Sign Up",         icon: "📝" },
+  { type: "paymongo-button", label: "PayMongo",        icon: "💳" },
 ]
 
 // ─────────────────────────────────────────────
@@ -536,12 +541,12 @@ function generateComponentSnippet(type: string, existingIds: string[] = [], comp
     paragraph: `<p class="${cls}">New paragraph text.</p>`,
     button:    `<button class="${cls}">Click Me</button>`,
     image:     `<img src="" alt="image" class="${cls}" />`,
-    input:     `<input type="text" placeholder="Enter text..." class="${cls}" />`,
-    textarea:  `<textarea placeholder="Enter message..." class="${cls}"></textarea>`,
+    input:    `<input class="${cls}" type="text" placeholder="Enter text..." />`,
+    textarea: `<textarea class="${cls}" placeholder="Enter message..."></textarea>`,
     select:    `<select class="${cls}" data-component-type="select"><option value="">Select...</option></select>`,
     checkbox:  `<input type="checkbox" class="${cls}" data-component-type="checkbox" />`,
-    container: `<div class="${cls}"><!-- Container content --></div>`,
-    divider:   `<hr class="${cls}" />`,
+    container: `<div class="${cls}" data-component-type="container"><!-- Container content --></div>`,
+    divider:   `<hr class="${cls}" data-component-type="divider" />`,
     modal:     `<button class="${cls}" data-component-type="modal">Open Modal</button>`,
     alert:     `<div class="${cls}" data-component-type="alert">This is an alert message.</div>`,
   }
@@ -613,7 +618,7 @@ function generateComponentSnippet(type: string, existingIds: string[] = [], comp
 
     case "grid":
       return [
-        `<div class="${cls}" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">`,
+        `<div class="${cls}" data-component-type="grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;">`,
         `  <div>Column 1</div>`,
         `  <div>Column 2</div>`,
         `  <div>Column 3</div>`,
@@ -622,7 +627,7 @@ function generateComponentSnippet(type: string, existingIds: string[] = [], comp
 
     case "form":
       return [
-        `<form class="${cls}">`,
+        `<form class="${cls}" data-component-type="form">`,
         `  <input type="text" placeholder="Name" />`,
         `  <input type="email" placeholder="Email" />`,
         `  <textarea placeholder="Message"></textarea>`,
