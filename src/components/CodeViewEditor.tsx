@@ -931,13 +931,27 @@ function syncPHPToCanvas(
   const deleted = [...existingSids].filter(s => !parsedSids.has(s) && !unrecognised.find(c => sanitizeId(c.id) === s)).length
   const updated = parsedList.length - added
 
+  // Build a lookup for fast access to parsed and orphaned components
+  const parsedById      = new Map(parsedList.map(c => [sanitizeId(c.id), c]))
+  const unrecognisedById = new Map(unrecognised.map(c => [sanitizeId(c.id), c]))
+
+  // Preserve existing canvas order for components already on this page,
+  // slotting in their updated parsed version (or keeping orphans in place).
+  const existingOrder = thisPage.map(c => sanitizeId(c.id))
+  const mergedInOrder = existingOrder
+    .map(sid => parsedById.get(sid) ?? unrecognisedById.get(sid) ?? null)
+    .filter((c): c is ComponentData => c !== null)
+
+  // Append genuinely new components (present in PHP but not on canvas yet)
+  const newlyAdded = parsedList.filter(c => !existingSids.has(sanitizeId(c.id)))
+
   const globalsSet = new Set(globals.map(c => c.id))
   return {
     components: [
       ...globals,
       ...otherPage.filter(c => !globalsSet.has(c.id)),
-      ...parsedList,      // already in PHP document order
-      ...unrecognised,    // orphaned canvas items go last
+      ...mergedInOrder,
+      ...newlyAdded,
     ],
     added,
     deleted,
