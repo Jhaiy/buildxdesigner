@@ -40,6 +40,8 @@ interface CanvasProps {
     string,
     { clientId: string; user: any; x: number; y: number }
   >;
+  onCursorMove?: (pos: { x: number; y: number }) => void;
+  onCursorLeave?: () => void;
 }
 
 // Command interface for undo/redo
@@ -76,6 +78,8 @@ export function Canvas({
   onMoveLayer,
   currentUser,
   remoteCursors = new Map(),
+  onCursorLeave,
+  onCursorMove,
 }: CanvasProps) {
   const clampedCanvasZoom = Math.min(
     MAX_CANVAS_ZOOM,
@@ -1404,6 +1408,22 @@ export function Canvas({
           ...(showRulers && !readOnly
             ? { paddingTop: RULER_SIZE, paddingLeft: RULER_SIZE }
             : {}),
+        }}
+        onMouseMove={(e) => {
+          if (!canvasRef.current || !onCursorMove) return;
+
+          const rect = canvasRef.current.getBoundingClientRect();
+          const scale = getEffectiveScale();
+
+          const x =
+            (e.clientX - rect.left + canvasRef.current.scrollLeft) / scale;
+          const y =
+            (e.clientY - rect.top + canvasRef.current.scrollTop) / scale;
+
+          onCursorMove({ x, y });
+        }}
+        onMouseLeave={() => {
+          onCursorLeave?.();
         }}
         onWheel={handleWheel}
         onMouseDown={handleCanvasMouseDown}

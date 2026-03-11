@@ -263,25 +263,7 @@ function useCollaborationLogic({
   }, [currentUser]);
 
   useEffect(() => {
-    if (state.currentView !== "editor") return;
-    if (!activeProjectId) return;
-
     const { awareness } = getOrInitDoc();
-    const canvas = document.getElementById("canvas-area") as HTMLElement | null;
-    if (!canvas) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-
-      const x = e.clientX - rect.left + canvas.scrollLeft;
-      const y = e.clientY - rect.top + canvas.scrollTop;
-
-      awareness.setLocalStateField("cursor", { x, y });
-    };
-
-    const handleMouseLeave = () => {
-      awareness.setLocalStateField("cursor", null);
-    };
 
     const handleAwarenessChange = () => {
       const newCursors = new Map<string, any>();
@@ -305,16 +287,20 @@ function useCollaborationLogic({
     awareness.on("change", handleAwarenessChange);
     handleAwarenessChange();
 
-    canvas.addEventListener("mousemove", handleMouseMove);
-    canvas.addEventListener("mouseleave", handleMouseLeave);
-
     return () => {
       awareness.off("change", handleAwarenessChange);
-      canvas.removeEventListener("mousemove", handleMouseMove);
-      canvas.removeEventListener("mouseleave", handleMouseLeave);
-      awareness.setLocalStateField("cursor", null);
     };
-  }, [getOrInitDoc, state.currentView, activeProjectId]);
+  }, [getOrInitDoc]);
+
+  const setLocalCursor = (pos: { x: number; y: number }) => {
+    const { awareness } = getOrInitDoc();
+    awareness.setLocalStateField("cursor", pos);
+  };
+
+  const clearLocalCursor = () => {
+    const { awareness } = getOrInitDoc();
+    awareness.setLocalStateField("cursor", null);
+  };
 
   useEffect(() => {
     if (state.currentView !== "editor") return;
@@ -664,6 +650,8 @@ function useCollaborationLogic({
     clearCanvas,
     remoteCursors,
     replaceProjectName,
+    setLocalCursor,
+    clearLocalCursor,
   };
 }
 

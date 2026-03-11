@@ -30,6 +30,12 @@ interface DualPaneEditorProps {
   projectId: string | null;
   projectName: string;
   canvasZoom?: number;
+  remoteCursors: Map<
+    string,
+    { clientId: string; user: any; x: number; y: number }
+  >;
+  onCursorMove: (pos: { x: number; y: number }) => void;
+  onCursorLeave: () => void;
 }
 
 export function DualPaneEditor({
@@ -46,6 +52,9 @@ export function DualPaneEditor({
   projectId,
   projectName,
   canvasZoom = 100,
+  remoteCursors,
+  onCursorMove,
+  onCursorLeave,
 }: DualPaneEditorProps) {
   const [viewMode, setViewMode] = useState<"design" | "split" | "code">(
     "design",
@@ -175,6 +184,9 @@ export function DualPaneEditor({
           projectId={projectId}
           projectName={projectName}
           canvasZoom={canvasZoom}
+          remoteCursors={remoteCursors}
+          onCursorMove={onCursorMove}
+          onCursorLeave={onCursorLeave}
         />
       </div>
     </div>
