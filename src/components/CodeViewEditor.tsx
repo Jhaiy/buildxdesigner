@@ -424,25 +424,21 @@ const SEMANTIC_SUFFIXES: Record<string, string[]> = {
   video:           ["main", "hero", "promo", "embed"],
 }
 
-const _usedIds = new Set<string>()
-
 function generateReadableId(type: string, existingIds: string[] = []): string {
-  const all = new Set([...existingIds, ..._usedIds])
+  const all = new Set(existingIds)
   const suffixes = SEMANTIC_SUFFIXES[type] ?? ["main", "content", "block", "section"]
 
   for (const suffix of suffixes) {
     const candidate = `${type}-${suffix}`
-    if (!all.has(candidate)) { _usedIds.add(candidate); return candidate }
+    if (!all.has(candidate)) return candidate
   }
   for (const suffix of suffixes) {
     for (let n = 2; n <= 9; n++) {
       const candidate = `${type}-${suffix}-${n}`
-      if (!all.has(candidate)) { _usedIds.add(candidate); return candidate }
+      if (!all.has(candidate)) return candidate
     }
   }
-  const fallback = `${type}-${Date.now().toString(36).slice(-4)}`
-  _usedIds.add(fallback)
-  return fallback
+  return `${type}-${Date.now().toString(36).slice(-4)}`
 }
 
 function extractShortId(cls: string): string | null {
@@ -1225,15 +1221,35 @@ const migrateComponentIds = useCallback((comps: ComponentData[]): { migrated: Co
   }, [selectedFile, isViewPHP, effectiveFiles, missingJS])
 
   const handleInsertSnippet = (type: string) => {
-    const existingIds = componentsRef.current.map(c => c.id)
-    // Pass props of the currently selected component if it matches the type being inserted
+    const current = isEditing ? draftContent : readOnlyContent
+
+    // Collect IDs from both canvas AND current file content
+    const existingIds = [
+      ...componentsRef.current.map(c => c.id),
+      ...[...current.matchAll(/class="([^"\s]+)/g)].map(m => m[1]),
+    ]
+
     const matchingComp = componentsRef.current.find(c => c.type === type)
     const snippet = generateComponentSnippet(type, existingIds, matchingComp?.props)
-    const current = isEditing ? draftContent : readOnlyContent
-    const insertAt = current.lastIndexOf("</div>")
+
+    // Extract the class name from the generated snippet to check for duplicates
+    const classMatch = snippet.match(/class="([^"\s]+)/)
+    const snippetClass = classMatch?.[1]
+
+    // Guard: if a class with this ID already exists in the file, don't insert
+    if (snippetClass && current.includes(`class="${snippetClass}`)) {
+      toast.error(`A "${snippetClass}" component already exists in this file.`)
+      return
+    }
+
+    // Insert before </main> if present, otherwise before the last </div>, otherwise append
+    let insertAt = current.lastIndexOf("</main>")
+    if (insertAt === -1) insertAt = current.lastIndexOf("</div>")
+
     const newContent = insertAt !== -1
       ? current.slice(0, insertAt) + `  ${snippet}\n` + current.slice(insertAt)
       : current + "\n" + snippet
+
     setDraftContent(newContent)
     if (!isEditing) { setIsEditing(true); setTimeout(() => textareaRef.current?.focus(), 0) }
     setShowAddPanel(false)
