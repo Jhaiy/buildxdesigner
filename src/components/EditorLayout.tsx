@@ -74,6 +74,8 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
     handleRightSplitterMouseDown,
     remoteCursors,
     replaceComponents,
+    setLocalCursor,
+    clearLocalCursor,
   } = editor;
 
   const [accessCheckTimedOut, setAccessCheckTimedOut] = useState(false);
@@ -128,7 +130,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
             onPublish={handlePublish}
             onShare={handleShare}
             onPreview={togglePreview}
-           
             onGoToDashboard={goToDashboard}
             isSaving={state.isSaving}
             lastSaved={state.lastSaved}
@@ -281,6 +282,8 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
                         readOnly={!canEditProject}
                         activePageId={state.activePageId}
                         remoteCursors={remoteCursors}
+                        onCursorMove={setLocalCursor}
+                        onCursorLeave={clearLocalCursor}
                       />
                       <RemoteCursors
                         cursors={Array.from(remoteCursors.values())}
@@ -506,8 +509,6 @@ export function EditorLayout({ editor, onStartTour }: EditorLayoutProps) {
               currentUser={state.currentUser}
             />
           )}
-
-         
 
           {state.showTemplates && (
             <TemplateModal

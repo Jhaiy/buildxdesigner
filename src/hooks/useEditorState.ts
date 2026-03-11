@@ -168,6 +168,8 @@ export function useEditorState() {
     clearCanvas,
     remoteCursors,
     replaceProjectName,
+    setLocalCursor,
+    clearLocalCursor,
   } = useCollaboration({
     projectId: state.currentProjectId || "",
     setState,
@@ -1443,6 +1445,8 @@ export function useEditorState() {
     moveLayer: handleMoveLayer,
     clearCanvas: clearCanvasGuarded,
     replaceComponents: replaceComponentsGuarded,
+    setLocalCursor,
+    clearLocalCursor,
 
     // Toggles
     togglePreview,
