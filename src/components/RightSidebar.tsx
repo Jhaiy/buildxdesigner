@@ -540,7 +540,7 @@ export function RightSidebar({
       {aiAssistantVisible && (
         <div className="flex flex-col h-full bg-background w-full">
           <div className="p-4 border-b">
-            <h3 className="font-medium text-sm">AI Design Assistant</h3>
+            <h3 className="font-medium text-sm">AI Mentor</h3>
           </div>
           <div className="flex-1 w-full overflow-hidden">
             <AIAssistant selectedComponentType={selectedComponent?.type} />
@@ -721,7 +721,7 @@ export function RightSidebar({
           >
             <span className="text-sm flex items-center gap-2">
               <Bot className="w-4 h-4" />
-              AI Assistant
+              AI Mentor
             </span>
             <ChevronDown className="w-4 h-4" />
           </Button>

@@ -1073,6 +1073,7 @@ export function CodeViewEditor({
   const isJSONFile = selectedFile.endsWith(".json")
 
   const syntaxLang = isCSSFile ? "css" : isJSFile ? "javascript" : isMDFile ? "markdown" : isJSONFile ? "json" : "php"
+  const isSyncableFile   = selectedFile.endsWith(".php") || selectedFile.endsWith(".css")
 
   const handleSelectFile = (path: string) => {
     if (path === selectedFile) return
@@ -1544,11 +1545,16 @@ const handleDeleteComponent = useCallback((compId: string) => {
           <div className="flex items-center gap-1 shrink-0">
             {!isEditing ? (
               <>
-                {hasOverride && (
-                  <Button size="sm" variant="ghost"
-                    className="h-7 px-2 gap-1 text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
-                    onClick={handleResetOverride} title="Reset to generated">
-                    <RefreshCw className="h-3 w-3" />Reset
+                {isSyncableFile && onCodeChange && (
+                  <Button
+                    data-tour="edit-code"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-3 gap-1.5 text-xs border-[#3a3a3a] bg-[#2a2a2a] hover:bg-[#333] text-muted-foreground hover:text-white"
+                    onClick={handleStartEdit}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Edit
                   </Button>
                 )}
                 {isViewPHP && onCodeChange && (

@@ -4,7 +4,7 @@ import type React from "react";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "./ui/button";
 import {
-
+  Download,
   MoreHorizontal,
   ArrowLeft,
   Play,
@@ -84,7 +84,7 @@ interface EditorTopBarProps {
   onPublish: () => void;
   onShare: () => void;
   onPreview?: () => void;
- 
+  onExport?: () => void;
   onGoToDashboard?: () => void;
   isSaving?: boolean;
   lastSaved?: Date | null;
@@ -105,14 +105,6 @@ interface EditorTopBarProps {
     email: string;
     name?: string;
     avatar_url?: string;
-     avatarUrl?: string;
-    picture?: string;
-    user_metadata?: {
-      avatar_url?: string;
-      picture?: string;
-      name?: string;
-      full_name?: string;
-    };
   } | null;
   isSupabaseConnected?: boolean;
   onPublishSuccess?: (subdomain: string) => void;
@@ -124,6 +116,7 @@ interface EditorTopBarProps {
   onAddPage?: (name: string, path: string) => void;
   onDeletePage?: (pageId: string) => void;
   onStartTour?: () => void;
+  onStartPublishingBasics?: () => void;
 }
 
 interface ProjectCollaborator {
@@ -224,7 +217,7 @@ export function EditorTopBar({
   onPublish,
   onShare,
   onPreview,
- 
+  onExport,
   onGoToDashboard,
   isSaving = false,
   lastSaved = null,
@@ -251,6 +244,7 @@ export function EditorTopBar({
   onAddPage,
   onDeletePage,
   onStartTour,
+  onStartPublishingBasics,
 }: EditorTopBarProps) {
   const navigate = useNavigate();
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
@@ -258,24 +252,6 @@ export function EditorTopBar({
   const projectNameRef = useRef<HTMLInputElement>(null);
   const publishButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
-  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
-
-  const profileDisplayName =
-    currentUser?.name ||
-    currentUser?.user_metadata?.full_name ||
-    currentUser?.user_metadata?.name ||
-    currentUser?.email?.split("@")[0] ||
-    "User";
-
-  const resolvedAvatarUrl =
-    currentUser?.avatar_url ||
-    currentUser?.avatarUrl ||
-    currentUser?.picture ||
-    currentUser?.user_metadata?.avatar_url ||
-    currentUser?.user_metadata?.picture ||
-    (currentUser?.email
-      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.email)}&background=2563eb&color=ffffff&bold=true`
-      : null);
 
   // Modal states
   const [showPreferences, setShowPreferences] = useState(false);
@@ -311,6 +287,10 @@ export function EditorTopBar({
   );
 
   const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
+  const [accountSettingsTab, setAccountSettingsTab] =
+    useState<string>("profile");
 
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [supabaseProjects, setSupabaseProjects] = useState<any[]>([]);
@@ -413,10 +393,6 @@ export function EditorTopBar({
     setTempProjectName(projectName);
   }, [projectName]);
 
-  useEffect(() => {
-    setAvatarLoadFailed(false);
-  }, [resolvedAvatarUrl]);
-
   const resolvedTemplatePublished =
     typeof isTemplatePublished === "boolean"
       ? isTemplatePublished
@@ -512,9 +488,6 @@ export function EditorTopBar({
     try {
       setIsTogglingTemplatePublish(true);
 
-      console.log("Calling endpoint:", `${API_URL}/api/insert-template-data`);
-      console.log("Payload", { projectId, userId });
-
       const response = nextChecked
         ? await fetch(`${API_URL}/api/insert-template-data`, {
             method: "POST",
@@ -532,13 +505,10 @@ export function EditorTopBar({
             }),
           });
 
-      const raw = await response.text();
-      let data: any = null;
-      try {
-        data = raw ? JSON.parse(raw) : null;
-      } catch {
-        data = { raw };
-      }
+      const data = await response
+        .clone()
+        .json()
+        .catch(async () => ({ raw: await response.text().catch(() => "") }));
 
       console.info("[EditorTopBar] template publish toggle response", {
         status: response.status,
@@ -1226,6 +1196,7 @@ export function EditorTopBar({
   return (
     <div
       id="toolbar-top"
+      data-tour="toolbar-top"
       className="h-14 bg-card border-b border-border flex items-center justify-between px-4 relative z-100"
     >
       <div className="flex items-center gap-3 min-w-0">
@@ -1280,6 +1251,7 @@ export function EditorTopBar({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                data-tour="design-mode"
                 variant="ghost"
                 size="sm"
                 onClick={() => onViewModeChange("design")}
@@ -1298,6 +1270,7 @@ export function EditorTopBar({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                data-tour="code-view"
                 variant="ghost"
                 size="sm"
                 onClick={() => onViewModeChange("code")}
@@ -1316,7 +1289,7 @@ export function EditorTopBar({
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="hidden md:block">
+        <div className="hidden md:block" data-tour="save-progress">
           <SaveIndicator
             isSaving={isSaving}
             lastSaved={lastSaved}
@@ -1556,6 +1529,7 @@ export function EditorTopBar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
+              data-tour="more-options"
               variant="ghost"
               size="sm"
               className="h-9 px-3 text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
@@ -1567,6 +1541,7 @@ export function EditorTopBar({
             {onManualSave && (
               <DropdownMenuItem
                 id="save-button"
+                data-tour="save-button"
                 onClick={onManualSave}
                 disabled={!hasUnsavedChanges || isSaving}
                 className="cursor-pointer"
@@ -1617,15 +1592,6 @@ export function EditorTopBar({
               <Keyboard className="w-4 h-4 mr-2" />
               Keyboard Shortcuts
             </DropdownMenuItem>
-            {onStartTour && (
-              <DropdownMenuItem
-                onClick={onStartTour}
-                className="cursor-pointer"
-              >
-                <Info className="w-4 h-4 mr-2" />
-                Start Tour
-              </DropdownMenuItem>
-            )}
             <DropdownMenuSeparator />
             <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
               Theme
@@ -1664,6 +1630,7 @@ export function EditorTopBar({
 
         {onPreview && (
           <Button
+            data-tour="preview"
             variant="ghost"
             size="sm"
             onClick={onPreview}
@@ -1673,32 +1640,40 @@ export function EditorTopBar({
           </Button>
         )}
 
-      
-        {isSupabaseConnected ? (
+        {onExport && (
           <Button
+            data-tour="download-project"
             variant="ghost"
             size="sm"
-            onClick={() => setShowSupabaseModal(true)}
-            className="h-9 px-3 text-green-600 bg-green-50/50 hover:bg-green-100 dark:hover:bg-green-900/20 transition-colors gap-2 border border-green-200 dark:border-green-800"
-            title="Manage Integrations"
+            onClick={onExport}
+            className="h-9 px-3 text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
           >
-            <Database className="w-4 h-4" />
-            <span className="hidden sm:inline font-medium">Connected</span>
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowSupabaseModal(true)}
-            className="h-9 px-3 text-foreground/70 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
-            title="Go to Integration"
-          >
-            <Database className="w-4 h-4" />
-            <span className="sr-only">Go to Integration</span>
+            <Download className="w-4 h-4" />
           </Button>
         )}
 
         <Button
+          data-tour="database-integration"
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowSupabaseModal(true)}
+          className={
+            isSupabaseConnected
+              ? "h-9 px-3 text-green-600 bg-green-50/50 hover:bg-green-100 dark:hover:bg-green-900/20 transition-colors gap-2 border border-green-200 dark:border-green-800"
+              : "h-9 px-3 text-foreground/70 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+          }
+          title={isSupabaseConnected ? "Manage Integrations" : "Go to Integration"}
+        >
+          <Database className="w-4 h-4" />
+          {isSupabaseConnected ? (
+            <span className="hidden sm:inline font-medium">Connected</span>
+          ) : (
+            <span className="sr-only">Go to Integration</span>
+          )}
+        </Button>
+
+        <Button
+          data-tour="publish"
           ref={publishButtonRef}
           onClick={handlePublishTemplateClick}
           size="sm"
@@ -1709,6 +1684,7 @@ export function EditorTopBar({
         </Button>
 
         <Button
+          data-tour="share"
           ref={shareButtonRef}
           onClick={handleShareClick}
           size="sm"
@@ -1717,20 +1693,15 @@ export function EditorTopBar({
           <span>Share</span>
         </Button>
 
-        {resolvedAvatarUrl && !avatarLoadFailed ? (
+        {currentUser?.avatar_url ? (
           <img
-            src={resolvedAvatarUrl}
-            alt={`${profileDisplayName} profile`}
-            title={currentUser?.email || profileDisplayName}
-            onError={() => setAvatarLoadFailed(true)}
-            className="w-9 h-9 rounded-full object-cover cursor-pointer hover:opacity-90 transition-opacity border border-border"
+            src={currentUser.avatar_url || "/placeholder.svg"}
+            alt="Profile"
+            className="w-9 h-9 rounded-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
           />
         ) : (
-         <div
-            title={currentUser?.email || profileDisplayName}
-            className="w-9 h-9 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity"
-          >
-            {profileDisplayName?.[0]?.toUpperCase() ||
+          <div className="w-9 h-9 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity">
+            {currentUser?.name?.[0]?.toUpperCase() ||
               currentUser?.email?.[0]?.toUpperCase() ||
               "U"}
           </div>
@@ -2056,54 +2027,59 @@ export function EditorTopBar({
       />
 
       <Dialog open={showSupabaseModal} onOpenChange={setShowSupabaseModal}>
-        <DialogContent className="max-w-[400px]">
-          <DialogHeader className="pb-4">
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Database className="w-5 h-5 text-green-600" />
-              Integration Settings
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">
-              Manage your external service connections.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-[400px]" data-tour="integration">
+          <div>
+            <DialogHeader className="pb-4">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Database className="w-5 h-5 text-green-600" />
+                Integration Settings
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Manage your external service connections.
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="flex flex-col gap-4 py-2">
-            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
-              <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
-                <span className="font-semibold block mb-1">
-                  Navigation Warning
-                </span>
-                You need to go to the Dashboard to manage your integrations.
-                This will exit the current editor session.
-              </p>
-            </div>
+            <div className="flex flex-col gap-4 py-2">
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md p-3">
+                <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                  <span className="font-semibold block mb-1">
+                    Navigation Warning
+                  </span>
+                  You need to go to the Dashboard to manage your integrations.
+                  This will exit the current editor session.
+                </p>
+              </div>
 
-            <div className="flex flex-col gap-3 pt-2">
-              <Button
-                onClick={() => {
-                  if (onGoToDashboard) {
-                    localStorage.setItem(
-                      "open_account_settings",
-                      "integration",
-                    );
-                    onGoToDashboard();
-                  }
-                }}
-                className="w-full hover:opacity-90 bg-blue-600 text-white hover:bg-blue-700"
-              >
-                Go to Integration
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => setShowSupabaseModal(false)}
-                className="w-full text-muted-foreground hover:text-foreground"
-              >
-                Cancel
-              </Button>
+              <div className="flex flex-col gap-3 pt-2">
+                <Button
+                  data-tour="go-to-integration"
+                  onClick={() => {
+                    setShowSupabaseModal(false);
+                    setAccountSettingsTab("integration");
+                    setShowAccountSettings(true);
+                  }}
+                  className="w-full hover:opacity-90 bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Go to Integration
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowSupabaseModal(false)}
+                  className="w-full text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      <AccountSettingsModal
+        isOpen={showAccountSettings}
+        onClose={() => setShowAccountSettings(false)}
+        defaultTab={accountSettingsTab}
+      />
     </div>
   );
 }

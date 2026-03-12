@@ -68,10 +68,15 @@ import { CreateNewWebsiteModal } from "./CreateNewWebsiteModal"; // Added import
 import { getApiBaseUrl } from "../utils/apiConfig";
 import Skeleton from "react-loading-skeleton";
 import "react-loading-skeleton/dist/skeleton.css";
+import { GettingStartedModal } from "./GettingStartedModal";
+import { BuildXIntroduction } from "./Guides/BuildXIntroduction";
+import { WebsiteCreation } from "./Guides/WebsiteCreation";
+import { PublishingBasics } from "./Guides/PublishingBasics";
 
 type DashboardSection = "new-chat" | "drafts" | "team" | "all" | "trash";
 
 const DASHBOARD_RETURN_SECTION_KEY = "dashboard_return_section";
+
 
 interface DashboardProps {
   onCreateFromScratch: () => void;
@@ -320,6 +325,10 @@ export function Dashboard({
   ); // Updated to string | null
   const [projectName, setProjectName] = useState("");
   const [showTemplateBrowser, setShowTemplateBrowser] = useState(false);
+  const [showGettingStartedModal, setShowGettingStartedModal] = useState(false);
+  const [showBuildXIntroductionTour, setShowBuildXIntroductionTour] = useState(false);
+  const [showWebsiteCreationTour, setShowWebsiteCreationTour] = useState(false);
+  const [showPublishingBasicsTour, setShowPublishingBasicsTour] = useState(false);
 
   const [newProjectCategory, setNewProjectCategory] = useState("Starter");
   const [newProjectDescription, setNewProjectDescription] = useState("");
@@ -368,6 +377,7 @@ export function Dashboard({
   const [isSavingProjectEdits, setIsSavingProjectEdits] = useState(false);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
 
+
   useEffect(() => {
     const openSettingsTab = localStorage.getItem("open_account_settings");
     const shouldUpdateStatus = localStorage.getItem("update_supabase_status");
@@ -403,6 +413,26 @@ export function Dashboard({
           }
         }
       })();
+    }
+  }, []);
+
+  useEffect(() => {
+    const shouldShow =
+      localStorage.getItem("buildx-show-getting-started") === "1";
+    if (!shouldShow) return;
+
+    localStorage.removeItem("buildx-show-getting-started");
+    setShowGettingStartedModal(true);
+  }, []);
+
+  useEffect(() => {
+    const introDone = localStorage.getItem("buildx-tutorial-intro") === "1";
+    const hasShownOnce =
+      localStorage.getItem("buildx-tutorial-getting-started-shown") === "1";
+
+    if (!introDone && !hasShownOnce) {
+      setShowGettingStartedModal(true);
+      localStorage.setItem("buildx-tutorial-getting-started-shown", "1");
     }
   }, []);
 
@@ -501,6 +531,7 @@ export function Dashboard({
     let mounted = true;
 
     const fetchPublishedTemplates = async () => {
+
       if (!currentUserId) {
         if (mounted) {
           setPublishedTemplateCards([]);
@@ -561,6 +592,24 @@ export function Dashboard({
           {},
         );
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         if (mounted) {
           const normalizedCards = payload.map(normalizeTemplateCard);
           setPublishedTemplateCards(normalizedCards);
@@ -573,7 +622,9 @@ export function Dashboard({
           }
 
           setIsApiReachable(true);
+
         }
+
       } catch (error) {
         if (mounted) {
           setIsApiReachable(false);
@@ -597,7 +648,43 @@ export function Dashboard({
     };
   }, [currentUserId]);
 
-  const visibleRecommendedTemplates = publishedTemplateCards;
+ const visibleRecommendedTemplates = (() => {
+    // Try to find an existing "getting started" template from the backend
+    const existingGuide =
+      publishedTemplateCards.find(
+        (t) =>
+          t.id === "getting-started-guide" || t.id === "getting-started",
+      ) ?? null;
+
+    // If backend did not provide one, create a synthetic guide card
+    const guideTemplate: TemplateCardData = existingGuide ?? {
+      id: "getting-started-guide",
+      projectId: "",
+      name: "Getting Started Guide",
+      category: "Starter",
+      thumbnail: "https://images.unsplash.com/photo-1542831371-29b0f74f9713?w=400&h=300&fit=crop",
+      description:
+        "Start here to learn the basics of BuildX Designer with an interactive tour.",
+      creator: "BuildX Designer",
+      creatorAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Builder",
+      views: 0,
+      favorites: 0,
+      premium: false,
+      tags: ["guide", "tutorial", "getting-started"],
+    };
+
+    const base = publishedTemplateCards;
+
+    // Remove potential duplicate of the guide from base by id
+    const withoutGuide = base.filter(
+      (t) =>
+        t.id !== "getting-started-guide" && t.id !== "getting-started",
+    );
+
+    // Always place the guide card at the front
+    return [guideTemplate, ...withoutGuide];
+  })();
+
 
   const getTemplateLikeKey = (template: TemplateCardData) =>
     String(template.projectId ?? "").trim();
@@ -1329,6 +1416,15 @@ export function Dashboard({
   };
 
   const handleQuickTemplateClick = (template: TemplateCardData) => {
+    // special case: open tutorial modal instead of creating from template
+    if (
+      template.id === "getting-started-guide" ||
+      template.id === "getting-started"
+    ) {
+      setShowGettingStartedModal(true);
+      return;
+    }
+
     setSelectedTemplateId(template.id);
     setShowTemplateBrowser(false);
     setShowCreateTemplateModal(true);
@@ -1532,6 +1628,7 @@ export function Dashboard({
         throw deleteError;
       }
 
+
       setShowDeleteConfirmDialog(false);
       setPendingDeleteProject(null);
 
@@ -1686,6 +1783,594 @@ export function Dashboard({
       alert(`Failed to move project to ${status}. Check console for details.`);
     }
   };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const generateUIWithGemini = async (prompt: string) => {
     try {
@@ -1894,9 +2579,8 @@ export function Dashboard({
 
   const filteredRecommendedTemplates = visibleRecommendedTemplates.filter(
     (template) =>
-      template.id !== "getting-started-guide" &&
-      (selectedTemplateCategory === "All" ||
-        template.category === selectedTemplateCategory),
+      selectedTemplateCategory === "All" ||
+      template.category === selectedTemplateCategory,
   );
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
@@ -2042,6 +2726,9 @@ export function Dashboard({
                 <Avatar className="h-8 w-8 ring-2 ring-blue-500/50 shrink-0">
                   {/* Use actual avatar URL from Supabase Storage */}
                   <AvatarImage src={resolvedSidebarAvatarUrl} alt={userName} />
+
+
+
                   <AvatarFallback className="bg-linear-to-br from-blue-600 to-violet-600 text-white text-sm">
                     {userInitial}
                   </AvatarFallback>
@@ -2210,9 +2897,12 @@ export function Dashboard({
           <div className="p-3 md:p-6">
             {activeSection === "new-chat" ? (
               <>
+
                 <div className="flex flex-col min-h-[calc(100vh-200px)]">
+
+
                   {/* Templates Section */}
-                  <div className="flex-1 px-4 pb-8 pt-0">
+                  <div className="flex-1 px-4 pb-8 pt-0" data-tour="recommended-templates">
                     {/* Updated max-width for better content spacing */}
                     <div className="w-full max-w-6xl mx-auto">
                       <div className="mb-6">
@@ -2274,6 +2964,11 @@ export function Dashboard({
                             renderRecommendedTemplateSkeletons()
                           ) : filteredRecommendedTemplates.length > 0 ? (
                             filteredRecommendedTemplates.map((template) => (
+
+
+
+
+
                               <div
                                 key={template.id}
                                 className="theme-interactive-card group relative rounded-xl overflow-hidden border border-border bg-card hover:shadow-lg transition-all cursor-pointer"
@@ -2305,7 +3000,9 @@ export function Dashboard({
                                     {template.description}
                                   </p>
 
+
                                   <div className="flex items-center justify-between pt-3 border-t border-border">
+
                                     <div className="flex items-center gap-2">
                                       <img
                                         src={
@@ -2320,7 +3017,8 @@ export function Dashboard({
                                       </span>
                                     </div>
 
-                                    <div className="flex items-center gap-3">
+
+                                    <div className="flex items-center gap-3" data-tour="template-like-button">
                                       <button
                                         type="button"
                                         onClick={(event) =>
@@ -3352,7 +4050,7 @@ export function Dashboard({
                 placeholder="Describe your website (optional)..."
                 value={editProjectDescription}
                 onChange={(e) => setEditProjectDescription(e.target.value)}
-                className="min-h-24"
+                className="min-h-[96px]"
               />
             </div>
 
@@ -3429,7 +4127,7 @@ export function Dashboard({
                 placeholder="Describe what kind of website you want to create..."
                 value={newProjectDescription}
                 onChange={(e) => setNewProjectDescription(e.target.value)}
-                className="min-h-24"
+                className="min-h-[96px]"
               />
             </div>
           </div>
@@ -3484,6 +4182,57 @@ export function Dashboard({
         recommendedTemplates={visibleRecommendedTemplates}
         initialTemplateId={selectedTemplateId} // Pass selectedTemplateId as initialTemplateId
       />
+
+      <GettingStartedModal
+        isOpen={showGettingStartedModal}
+        onClose={() => setShowGettingStartedModal(false)}
+        onStartBuildXIntroduction={() => {
+          // Ensure the DOM contains the elements the tour targets.
+          setShowBuildXIntroductionTour(false);
+          setActiveSection("new-chat");
+          setTimeout(() => setShowBuildXIntroductionTour(true), 50);
+        }}
+        onStartWebsiteCreation={() => {
+          localStorage.setItem("buildx-pending-editor-tour", "1");
+          setSelectedTemplateId("blank");
+          setShowCreateTemplateModal(true);
+        }}
+        onStartPublishingBasics={() => {
+          setShowPublishingBasicsTour(false);
+          setActiveSection("all");
+          setTimeout(() => setShowPublishingBasicsTour(true), 50);
+        }}
+      />
+
+      <BuildXIntroduction
+        showOnMount={showBuildXIntroductionTour}
+        onComplete={() => {
+          localStorage.setItem("buildx-tutorial-intro", "1");
+          setShowBuildXIntroductionTour(false);
+          setShowCreateTemplateModal(false);
+          setSelectedTemplateId(null);
+          setShowGettingStartedModal(true);
+        }}
+      />
+
+      <WebsiteCreation
+        showOnMount={showWebsiteCreationTour}
+        onComplete={() => {
+          localStorage.setItem("buildx-tutorial-website-creation", "1");
+          setShowWebsiteCreationTour(false);
+          setShowGettingStartedModal(true);
+        }}
+      />
+
+      <PublishingBasics
+        showOnMount={showPublishingBasicsTour}
+        onComplete={() => {
+          localStorage.setItem("buildx-tutorial-publishing-basics", "1");
+          setShowPublishingBasicsTour(false);
+          setShowGettingStartedModal(true);
+        }}
+      />
+
     </div>
   );
 }

@@ -122,7 +122,11 @@ export function Sidebar({
   const marketingComponents: any[] = []
 
   return (
-    <div id="sidebar-palette" className="w-full bg-card flex flex-col h-full overflow-hidden sidebar-compact">
+    <div
+      id="sidebar-palette"
+      data-tour="sidebar-palette"
+      className="w-full bg-card flex flex-col h-full overflow-hidden sidebar-compact"
+    >
       <Tabs defaultValue="blocks" className="flex flex-col h-full overflow-hidden">
         <div className="border-b p-3 shrink-0">
           <TabsList className="grid w-full grid-cols-3 h-8">
@@ -194,7 +198,9 @@ export function Sidebar({
                     label: "Buy Now",
                     amount: 100,
                     description: "Product Purchase",
-                    currency: "PHP"
+                    currency: "PHP",
+                    variant: "default",
+                    size: "default"
                   }}
                 />
               </div>
