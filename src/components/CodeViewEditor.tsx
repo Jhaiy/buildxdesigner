@@ -838,21 +838,12 @@ function parsePHPToFullComponentList(
   // Deduplicate: keep only the FIRST occurrence of each sid (by document order).
   // This handles cases where multiple regex passes match the same element.
   // Genuine duplicates (same class used twice) get a --2, --3 suffix.
-  const sidCounts = new Map<string, number>()
   const seenDedup = new Set<string>()
-  const dedupedCandidates = candidates
-    .map(c => {
-      if (!seenDedup.has(c.sid)) {
-        seenDedup.add(c.sid)
-        return c
-      }
-      // Genuine duplicate class — assign a unique suffix
-      const count = (sidCounts.get(c.sid) ?? 1) + 1
-      sidCounts.set(c.sid, count)
-      const uniqueSid = `${c.sid}--${count}`
-      seenDedup.add(uniqueSid)
-      return { ...c, sid: uniqueSid }
-    })
+  const dedupedCandidates = candidates.filter(c => {
+    if (seenDedup.has(c.sid)) return false
+    seenDedup.add(c.sid)
+    return true
+  })
 
   console.log("[parser] final order:", dedupedCandidates.map(c => ({ index: c.index, sid: c.sid, type: c.type })))  
 
@@ -908,8 +899,9 @@ function syncPHPToCanvas(
   allComponents: ComponentData[],
   pageId: string,
 ): { components: ComponentData[]; added: number; deleted: number; updated: number } {
-  const isThisPage = (c: ComponentData) =>
-    c.page_id === pageId || (!c.page_id) || c.page_id === undefined
+const isThisPage = (c: ComponentData) =>
+  c.page_id !== "all" &&
+  (c.page_id === pageId || !c.page_id || c.page_id === undefined)
 
   const thisPage  = allComponents.filter(isThisPage)
   const globals   = allComponents.filter(c => c.page_id === "all")
@@ -947,7 +939,9 @@ function syncPHPToCanvas(
     .filter((c): c is ComponentData => c !== null)
 
   // Append genuinely new components (present in PHP but not on canvas yet)
-  const newlyAdded = parsedList.filter(c => !existingSids.has(sanitizeId(c.id)))
+const allExistingIds = new Set(allComponents.map(c => sanitizeId(c.id)))
+
+const newlyAdded = parsedList.filter(c => !allExistingIds.has(sanitizeId(c.id)))
 
   const globalsSet = new Set(globals.map(c => c.id))
   return {
@@ -1175,48 +1169,45 @@ const migrateComponentIds = useCallback((comps: ComponentData[]): { migrated: Co
   return { migrated, changed }
 }, [])
 
-  const handleManualSync = useCallback(() => {
-    if (!selectedFile || !isViewPHP || !onCodeChange) return
-    const content = isEditing ? draftContent : readOnlyContent
-    const cssFile = selectedFile.replace("app/views/", "public/assets/css/").replace(".php", ".css")
-    const jsFile  = selectedFile.replace("app/views/", "public/assets/js/").replace(".php", ".js")
-    const cssCode = effectiveFiles[cssFile] ?? null
-    try {
-      const nonPageComponents = componentsRef.current.filter(c =>
-        c.page_id !== activePHPPageId && c.page_id !== undefined && c.page_id !== null
-      )
-      const { components: synced, added, deleted, updated } = syncPHPToCanvas(
-        content, cssCode, [...nonPageComponents, ...componentsRef.current.filter(c => c.page_id === "all")], activePHPPageId
-      )
-      const { migrated, changed: idsMigrated } = migrateComponentIds(synced)
+const handleManualSync = useCallback(() => {
+  if (!selectedFile || !isViewPHP || !onCodeChange) return
+  const content = isEditing ? draftContent : readOnlyContent
+  const cssFile = selectedFile.replace("app/views/", "public/assets/css/").replace(".php", ".css")
+  const jsFile  = selectedFile.replace("app/views/", "public/assets/js/").replace(".php", ".js")
+  const cssCode = effectiveFiles[cssFile] ?? null
+  try {
+    const { components: synced, added, deleted, updated } = syncPHPToCanvas(
+      draftContent, cssCode, componentsRef.current, activePHPPageId
+    )
+    const { migrated, changed: idsMigrated } = migrateComponentIds(synced)
+    onCodeChange(migrated)
 
-      if (isEditing) {
-        if (isCustomFile) setCustomFiles(prev => ({ ...prev, [selectedFile]: draftContent }))
-        else setFileOverrides(prev => ({ ...prev, [selectedFile]: draftContent }))
-        setIsEditing(false); setDraftContent(""); setPendingDiff(null)
-      }
-      onCodeChange(migrated);
-      detectWarningsInContent(content)
-      detectMissingStyles(migrated, cssFile, jsFile)
-      const parts = [
-        added       > 0 ? `+${added} added`          : "",
-        deleted     > 0 ? `-${deleted} deleted`       : "",
-        updated     > 0 ? `${updated} updated`        : "",
-        idsMigrated > 0 ? `${idsMigrated} IDs renamed` : "",
-      ].filter(Boolean)
-      const unknowns = migrated.filter(c => c.type === "__unknown__")
-      if (unknowns.length > 0) {
-        toast.warning(`Synced with ${unknowns.length} unknown component${unknowns.length > 1 ? "s" : ""}.`)
-      } else {
-        toast.success(`Canvas synced! ${parts.join("  ") || "No structural changes."}`)
-      }
-      setSavedIndicator(true); setTimeout(() => setSavedIndicator(false), 2500)
-    } catch (err: any) {
-      toast.error("Sync failed: " + err.message)
+    if (isEditing) {
+      if (isCustomFile) setCustomFiles(prev => ({ ...prev, [selectedFile]: draftContent }))
+      else setFileOverrides(prev => ({ ...prev, [selectedFile]: draftContent }))
+      setIsEditing(false); setDraftContent(""); setPendingDiff(null)
     }
-  }, [selectedFile, isViewPHP, onCodeChange, isEditing, draftContent, readOnlyContent,
-      effectiveFiles, activePHPPageId, isCustomFile, detectWarningsInContent,
-      detectMissingStyles, migrateComponentIds])
+    detectWarningsInContent(content)
+    detectMissingStyles(migrated, cssFile, jsFile)
+    const parts = [
+      added       > 0 ? `+${added} added`            : "",
+      deleted     > 0 ? `-${deleted} deleted`         : "",
+      updated     > 0 ? `${updated} updated`          : "",
+      idsMigrated > 0 ? `${idsMigrated} IDs renamed`  : "",
+    ].filter(Boolean)
+    const unknowns = migrated.filter(c => c.type === "__unknown__")
+    if (unknowns.length > 0) {
+      toast.warning(`Synced with ${unknowns.length} unknown component${unknowns.length > 1 ? "s" : ""}.`)
+    } else {
+      toast.success(`Canvas synced! ${parts.join("  ") || "No structural changes."}`)
+    }
+    setSavedIndicator(true); setTimeout(() => setSavedIndicator(false), 2500)
+  } catch (err: any) {
+    toast.error("Sync failed: " + err.message)
+  }
+}, [selectedFile, isViewPHP, onCodeChange, isEditing, draftContent, readOnlyContent,
+    effectiveFiles, activePHPPageId, isCustomFile, detectWarningsInContent,
+    detectMissingStyles, migrateComponentIds])
 
   const handleGenerateCSS = useCallback(() => {
     if (!selectedFile || !isViewPHP) return

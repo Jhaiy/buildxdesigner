@@ -399,20 +399,11 @@ function useCollaborationLogic({
             hasUnsavedChanges: false,
           };
         });
-      } finally {
-        if (!cancelled) {
-          // FIX 3: Restore the v1 finally block — re-sync yComponents into state
-          // after hydration completes. The new version removed this, causing the
-          // owner's React state to diverge from Yjs when remote updates arrived
-          // during hydration, making the owner unable to see collaborator changes.
-          const { yComponents } = getOrInitDoc();
-          setState((prev) => ({
-            ...prev,
-            components: yComponents.toArray(),
-          }));
-          isHydratingRef.current = false;
-        }
-      }
+} finally {
+  if (!cancelled) {
+    isHydratingRef.current = false;
+  }
+}
     })();
 
     return () => {
