@@ -37,7 +37,9 @@ import { OnboardingPage } from "./components/OnboardingPage";
 import { GetOut } from "./components/UnexpectedEntry/UnexpectedEntry";
 import LoginAuthSessionChecker from "./services/useAuthenticator";
 import { CollaborationServiceProvider } from "./services/useCollaboration";
-import { MultiStepTour } from "./components/Guides/MultiStepTour";
+import { WebsiteCreation } from "./components/Guides/WebsiteCreation";
+import { PublishingBasics } from "./components/Guides/PublishingBasics";
+import { GettingStartedModal } from "./components/GettingStartedModal";
 
 // State hook (contains ALL state, effects, auth, keyboard shortcuts, etc.)
 import { useEditorState } from "./hooks/useEditorState";
@@ -72,51 +74,6 @@ const getPathFromState = (view: string, projectId: string | null) => {
   }
 };
 
-const EDITOR_TOUR_STEPS = [
-  {
-    title: "Welcome to BuildX Designer! 🎉",
-    description:
-      "Let's take a quick tour to get you started with building your first website.",
-  },
-  {
-    element: "#sidebar-palette",
-    title: "Components Palette",
-    description:
-      "This is your toolbox! Drag any component from here onto the canvas to start building your website.",
-    side: "right" as const,
-    align: "start" as const,
-  },
-  {
-    element: "#canvas-area",
-    title: "Canvas Area",
-    description:
-      "This is your workspace. Drop components here, resize them, and arrange them to create your layout.",
-    side: "top" as const,
-    align: "center" as const,
-  },
-  {
-    element: "#properties-panel",
-    title: "Properties Panel",
-    description:
-      "Click on any component on the canvas to edit its properties here - change colors, text, spacing, and more!",
-    side: "left" as const,
-    align: "start" as const,
-  },
-  {
-    element: "#toolbar-top",
-    title: "Toolbar",
-    description:
-      "Use these tools to undo, redo, preview your site, and export your work when you're done.",
-    side: "bottom" as const,
-    align: "center" as const,
-  },
-  {
-    title: "You're Ready! 🎉",
-    description:
-      "That's it! Start creating by dragging components onto the canvas. Have fun building!",
-  },
-];
-
 const ONBOARDING_SESSION_INTENT_KEY = "buildxdesigner:auth-intent";
 const ONBOARDING_COMPLETED_PREFIX = "buildxdesigner:onboarding-completed:";
 
@@ -148,17 +105,20 @@ function AppRoutes({ editor }: { editor: EditorController }) {
   const isInitialMount = useRef(true);
   const onboardingCheckUserIdRef = useRef<string | null>(null);
   const [showEditorTour, setShowEditorTour] = useState(false);
-  // Debug logging
+  const [showGettingStartedModal, setShowGettingStartedModal] = useState(false);
+  const [showPublishingBasicsTour, setShowPublishingBasicsTour] = useState(false);
+
+  //Ito is ihohold niya muna yung tutorial to create a project, and then kapag nakacreate na siya ng project, dun na magcocontinue yung tutorial
   useEffect(() => {
-    const userId = editor.currentUser?.id;
-    if (userId) {
-      console.log(
-        "[Onboarding Debug] isOnboardingRequired:",
-        isOnboardingRequired(userId),
-      );
-      console.log("[Onboarding Debug] showOnboarding:", editor.showOnboarding);
-    }
-  }, [editor.currentUser?.id, editor.showOnboarding]);
+    if (!location.pathname.startsWith("/editor")) return;
+
+    const shouldStartTour =
+      localStorage.getItem("buildx-pending-editor-tour") === "1";
+    if (!shouldStartTour) return;
+
+    localStorage.removeItem("buildx-pending-editor-tour");
+    setShowEditorTour(true);
+  }, [location.pathname]);
 
   const {
     state,
@@ -634,13 +594,35 @@ function AppRoutes({ editor }: { editor: EditorController }) {
               <EditorLayout
                 editor={{ ...editor, goToDashboard: goToDashboardAndRoute }}
                 onStartTour={() => setShowEditorTour(true)}
+                onStartPublishingBasics={() => setShowPublishingBasicsTour(true)}
               />
-              <MultiStepTour
-                steps={EDITOR_TOUR_STEPS}
+              <WebsiteCreation
                 showOnMount={showEditorTour}
-                onComplete={() => setShowEditorTour(false)}
-                showProgress={true}
-                showButtons={["next", "previous", "close"]}
+                onComplete={() => {
+                  localStorage.setItem("buildx-tutorial-website-creation", "1");
+                  setShowEditorTour(false);
+                  setShowGettingStartedModal(true);
+                }}
+              />
+              <PublishingBasics
+                showOnMount={showPublishingBasicsTour}
+                onComplete={() => {
+                  localStorage.setItem("buildx-tutorial-publishing-basics", "1");
+                  setShowPublishingBasicsTour(false);
+                  setShowGettingStartedModal(true);
+                }}
+              />
+              <GettingStartedModal
+                isOpen={showGettingStartedModal}
+                onClose={() => setShowGettingStartedModal(false)}
+                onStartWebsiteCreation={() => {
+                  setShowGettingStartedModal(false);
+                  setShowEditorTour(true);
+                }}
+                onStartPublishingBasics={() => {
+                  setShowGettingStartedModal(false);
+                  setShowPublishingBasicsTour(true);
+                }}
               />
             </>
           )
@@ -653,13 +635,35 @@ function AppRoutes({ editor }: { editor: EditorController }) {
             <EditorLayout
               editor={{ ...editor, goToDashboard: goToDashboardAndRoute }}
               onStartTour={() => setShowEditorTour(true)}
+              onStartPublishingBasics={() => setShowPublishingBasicsTour(true)}
             />
-            <MultiStepTour
-              steps={EDITOR_TOUR_STEPS}
+            <WebsiteCreation
               showOnMount={showEditorTour}
-              onComplete={() => setShowEditorTour(false)}
-              showProgress={true}
-              showButtons={["next", "previous", "close"]}
+              onComplete={() => {
+                localStorage.setItem("buildx-tutorial-website-creation", "1");
+                setShowEditorTour(false);
+                setShowGettingStartedModal(true);
+              }}
+            />
+            <PublishingBasics
+              showOnMount={showPublishingBasicsTour}
+              onComplete={() => {
+                localStorage.setItem("buildx-tutorial-publishing-basics", "1");
+                setShowPublishingBasicsTour(false);
+                setShowGettingStartedModal(true);
+              }}
+            />
+            <GettingStartedModal
+              isOpen={showGettingStartedModal}
+              onClose={() => setShowGettingStartedModal(false)}
+              onStartWebsiteCreation={() => {
+                setShowGettingStartedModal(false);
+                setShowEditorTour(true);
+              }}
+              onStartPublishingBasics={() => {
+                setShowGettingStartedModal(false);
+                setShowPublishingBasicsTour(true);
+              }}
             />
           </>
         }
@@ -671,13 +675,35 @@ function AppRoutes({ editor }: { editor: EditorController }) {
             <EditorLayout
               editor={{ ...editor, goToDashboard: goToDashboardAndRoute }}
               onStartTour={() => setShowEditorTour(true)}
+              onStartPublishingBasics={() => setShowPublishingBasicsTour(true)}
             />
-            <MultiStepTour
-              steps={EDITOR_TOUR_STEPS}
+            <WebsiteCreation
               showOnMount={showEditorTour}
-              onComplete={() => setShowEditorTour(false)}
-              showProgress={true}
-              showButtons={["next", "previous", "close"]}
+              onComplete={() => {
+                localStorage.setItem("buildx-tutorial-website-creation", "1");
+                setShowEditorTour(false);
+                setShowGettingStartedModal(true);
+              }}
+            />
+            <PublishingBasics
+              showOnMount={showPublishingBasicsTour}
+              onComplete={() => {
+                localStorage.setItem("buildx-tutorial-publishing-basics", "1");
+                setShowPublishingBasicsTour(false);
+                setShowGettingStartedModal(true);
+              }}
+            />
+            <GettingStartedModal
+              isOpen={showGettingStartedModal}
+              onClose={() => setShowGettingStartedModal(false)}
+              onStartWebsiteCreation={() => {
+                setShowGettingStartedModal(false);
+                setShowEditorTour(true);
+              }}
+              onStartPublishingBasics={() => {
+                setShowGettingStartedModal(false);
+                setShowPublishingBasicsTour(true);
+              }}
             />
           </>
         }

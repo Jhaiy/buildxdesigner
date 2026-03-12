@@ -1394,6 +1394,7 @@ export function Canvas({
           }
         }}
         id="canvas-area"
+        data-tour="canvas-area"
         className={`w-full h-full figma-canvas-infinite overflow-y-auto overflow-x-hidden ${isOver ? "bg-primary/5" : ""}`}
         style={{
           backgroundColor: canvasProperties.backgroundColor,

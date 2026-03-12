@@ -521,7 +521,11 @@ export function PropertiesPanel({
 
   if (!selectedComponent) {
     return (
-      <div id="properties-panel" className="p-4 space-y-4">
+      <div
+        id="properties-panel"
+        data-tour="properties-panel"
+        className="p-4 space-y-4"
+      >
         <div>
           <h3 className="text-sm font-semibold mb-3">Canvas Properties</h3>
           <div className="space-y-4">
@@ -3576,7 +3580,11 @@ const selectValue = (!currentUrl || currentUrl === "#" || !isKnownUrl) ? "none" 
   }
 
   return (
-    <div id="properties-panel" className="w-72 border-l bg-background flex flex-col h-full">
+    <div
+      id="properties-panel"
+      data-tour="properties-panel"
+      className="w-72 border-l bg-background flex flex-col h-full"
+    >
       {/* Component Header */}
       <div className="p-3 border-b shrink-0 bg-background hidden">
         <div className="flex items-center justify-between">
