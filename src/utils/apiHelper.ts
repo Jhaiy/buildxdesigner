@@ -41,3 +41,23 @@ export async function fetchDraftProjectsFromApi(
     type: project.type || "design",
   }));
 }
+
+export async function fetchTrendingTemplatesFromApi(limit = 20) {
+  const apiBaseUrl = getApiBaseUrl();
+  const response = await fetch(
+    `${apiBaseUrl}/api/most-liked-templates?limit=${limit}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch trending templates: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.templates || [];
+}

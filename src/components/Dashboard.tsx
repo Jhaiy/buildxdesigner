@@ -70,7 +70,10 @@ import { GettingStartedModal } from "./GettingStartedModal";
 import { BuildXIntroduction } from "./Guides/BuildXIntroduction";
 import { WebsiteCreation } from "./Guides/WebsiteCreation";
 import { PublishingBasics } from "./Guides/PublishingBasics";
-import { fetchDraftProjectsFromApi } from "../utils/apiHelper";
+import {
+  fetchDraftProjectsFromApi,
+  fetchTrendingTemplatesFromApi,
+} from "../utils/apiHelper";
 
 type DashboardSection = "new-chat" | "drafts" | "team" | "all" | "trash";
 
@@ -376,6 +379,13 @@ export function Dashboard({
   const [editProjectDescription, setEditProjectDescription] = useState("");
   const [isSavingProjectEdits, setIsSavingProjectEdits] = useState(false);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [sortBy, setSortBy] = useState<"last_modified" | "name">(
+    "last_modified",
+  );
+  const [trendingTemplates, setTrendingTemplates] = useState<
+    TemplateCardData[]
+  >([]);
+  const [trendingLoading, setTrendingLoading] = useState(false);
 
   useEffect(() => {
     const openSettingsTab = localStorage.getItem("open_account_settings");
@@ -525,6 +535,40 @@ export function Dashboard({
       ),
     };
   };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadTrendingTemplates = async () => {
+      try {
+        setTrendingLoading(true);
+
+        const data = await fetchTrendingTemplatesFromApi(20);
+
+        if (!mounted) return;
+
+        const normalized = Array.isArray(data)
+          ? data.map(normalizeTemplateCard)
+          : [];
+
+        setTrendingTemplates(normalized);
+      } catch (error) {
+        if (!mounted) return;
+        console.error("Failed to load trending templates:", error);
+        setTrendingTemplates([]);
+      } finally {
+        if (mounted) {
+          setTrendingLoading(false);
+        }
+      }
+    };
+
+    loadTrendingTemplates();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -1290,7 +1334,6 @@ export function Dashboard({
         break;
     }
 
-    // Apply search filter
     if (searchQuery) {
       filtered = filtered.filter(
         (project) =>
@@ -1299,7 +1342,18 @@ export function Dashboard({
       );
     }
 
-    return filtered;
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === "name") {
+        return a.name.localeCompare(b.name);
+      }
+
+      const aTime = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+      const bTime = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+
+      return bTime - aTime;
+    });
+
+    return sorted;
   };
 
   const handleTemplateClick = (templateId: string) => {
@@ -2419,6 +2473,105 @@ export function Dashboard({
                     </div>
                   </div>
                 </div>
+                <div className="w-full max-w-6xl mx-auto mt-10">
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-2xl font-semibold text-foreground">
+                        Trending
+                      </h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-4">
+                      {trendingLoading ? (
+                        renderRecommendedTemplateSkeletons()
+                      ) : trendingTemplates.length > 0 ? (
+                        trendingTemplates.map((template) => (
+                          <div
+                            key={template.id}
+                            className="theme-interactive-card group relative rounded-xl overflow-hidden border border-border bg-card hover:shadow-lg transition-all cursor-pointer"
+                            onClick={() => handleQuickTemplateClick(template)}
+                          >
+                            <div className="aspect-video bg-muted relative overflow-hidden">
+                              <img
+                                src={template.thumbnail || "/placeholder.svg"}
+                                alt={template.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                            </div>
+
+                            <div className="p-4">
+                              <h3 className="font-semibold text-foreground mb-1 group-hover:text-blue-600 transition-colors">
+                                {template.name}
+                              </h3>
+
+                              <Badge
+                                variant="outline"
+                                className="mb-2 rounded-full border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                              >
+                                {template.category}
+                              </Badge>
+
+                              <p className="text-sm text-muted-foreground mb-3">
+                                {template.description}
+                              </p>
+
+                              <div className="flex items-center justify-between pt-3 border-t border-border">
+                                <div className="flex items-center gap-2">
+                                  <img
+                                    src={
+                                      template.creatorAvatar ||
+                                      "/placeholder.svg"
+                                    }
+                                    alt={template.creator}
+                                    className="w-6 h-6 rounded-full"
+                                  />
+                                  <span className="text-xs text-muted-foreground font-medium">
+                                    {template.creator}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={(event) =>
+                                      handleLikeTemplate(event, template)
+                                    }
+                                    disabled={
+                                      likingTemplateIds[
+                                        getTemplateLikeKey(template)
+                                      ]
+                                    }
+                                    className={`flex items-center gap-1 transition-colors ${
+                                      isTemplateLiked(template)
+                                        ? "text-red-500"
+                                        : "text-muted-foreground hover:text-red-500"
+                                    }`}
+                                  >
+                                    <Heart
+                                      className={`w-4 h-4 ${
+                                        isTemplateLiked(template)
+                                          ? "fill-red-500 text-red-500"
+                                          : ""
+                                      }`}
+                                    />
+                                    <span className="text-xs">
+                                      {getTemplateLikeCount(template)}
+                                    </span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="col-span-full rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
+                          No trending templates available.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </>
             ) : activeSection === "all" ||
               activeSection === "drafts" ||
@@ -2440,14 +2593,21 @@ export function Dashboard({
                             size="sm"
                             className="h-8 gap-1"
                           >
-                            Last viewed
+                            {sortBy === "last_modified"
+                              ? "Last modified"
+                              : "Name"}
                             <ChevronDown className="w-3 h-3" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
-                          <DropdownMenuItem>Last viewed</DropdownMenuItem>
-                          <DropdownMenuItem>Last modified</DropdownMenuItem>
-                          <DropdownMenuItem>Name</DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setSortBy("last_modified")}
+                          >
+                            Last modified
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSortBy("name")}>
+                            Name
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
 
