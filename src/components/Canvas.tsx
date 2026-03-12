@@ -4,20 +4,9 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useDrop } from "react-dnd";
 import type { ComponentData } from "../App";
 import { RenderableComponent } from "./RenderableComponent";
-import { getSupabaseSession } from "../supabase/auth/authService";
-import {
-  syncProjectComponents,
-  saveProjectMetadata,
-} from "../supabase/data/projectService";
-import { setLocalProjectCache } from "../supabase/data/projectService";
-
 import { CanvasContextMenu } from "./CanvasContextMenu";
 import { Plus, Loader2 } from "lucide-react";
 
-// Constants
-
-// Local storage key for saving components
-const LOCAL_STORAGE_KEY = "canvas_components";
 const DESIGN_WIDTH = 1920;
 const DESIGN_HEIGHT = 20000;
 const RULER_SIZE = 20;
@@ -28,6 +17,7 @@ interface CanvasProps {
   components: ComponentData[];
   selectedComponent: ComponentData | null;
   onSelectComponent: (component: ComponentData | null) => void;
+  onAddComponent: (component: ComponentData) => void;
   onUpdateComponent: (id: string, updates: Partial<ComponentData>) => void;
   onDeleteComponent: (id: string) => void;
   onReorderComponent: (id: string, direction: "front" | "back") => void;
@@ -45,6 +35,13 @@ interface CanvasProps {
   activePageId?: string;
   pages?: { id: string; name: string; path: string }[];
   onMoveLayer: (id: string, action: "forward" | "backward") => void;
+  currentUser?: any;
+  remoteCursors?: Map<
+    string,
+    { clientId: string; user: any; x: number; y: number }
+  >;
+  onCursorMove?: (pos: { x: number; y: number }) => void;
+  onCursorLeave?: () => void;
 }
 
 // Command interface for undo/redo
@@ -63,6 +60,7 @@ interface CanvasProperties {
 export function Canvas({
   components,
   selectedComponent,
+  onAddComponent,
   onSelectComponent,
   onUpdateComponent,
   onDeleteComponent,
@@ -78,6 +76,10 @@ export function Canvas({
   activePageId = "home",
   pages = [{ id: "home", name: "Home", path: "/" }],
   onMoveLayer,
+  currentUser,
+  remoteCursors = new Map(),
+  onCursorLeave,
+  onCursorMove,
 }: CanvasProps) {
   const clampedCanvasZoom = Math.min(
     MAX_CANVAS_ZOOM,
@@ -100,7 +102,6 @@ export function Canvas({
   const contentRef = useRef<HTMLDivElement>(null);
   const hasAutoScrolled = useRef(false);
   const previousScaleRef = useRef(clampedCanvasZoom / 100);
-  const saveTimerRef = useRef<number | null>(null);
   const [viewportWidth, setViewportWidth] = useState(DESIGN_WIDTH);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [editTextPosition, setEditTextPosition] = useState({ x: 0, y: 0 });
@@ -748,7 +749,7 @@ export function Canvas({
       };
 
       const undo = () => {
-        onUpdateComponent(component.id, component);
+        onAddComponent(component);
         onSelectComponent(component);
       };
 
@@ -757,62 +758,6 @@ export function Canvas({
     },
     [addToHistory, onDeleteComponent, onUpdateComponent, onSelectComponent],
   );
-
-  // Save components to localStorage and debounce-persist to Supabase whenever they change
-  // Save components to localStorage and debounce-persist to Supabase whenever they change
-  useEffect(() => {
-    // DO NOT save to local storage or DB if in readOnly mode (e.g. published site view)
-    if (readOnly) return;
-
-    try {
-      if (projectId) {
-        setLocalProjectCache(projectId, {
-          id: projectId,
-          name: projectName,
-          project_layout: components,
-          pages: pages,
-        });
-      } else {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(components));
-      }
-      console.log("Components saved to localStorage:", components);
-    } catch (error) {
-      console.error("Error saving components to localStorage:", error);
-    }
-
-    // Debounced cloud save
-    if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = window.setTimeout(async () => {
-      try {
-        const {
-          data: { session },
-        } = await getSupabaseSession();
-        const user_id = session?.user?.id;
-        if (!user_id) return; // if hindi logged in
-        if (!projectId) return; // para di magcreate ng new project
-
-        // Sync components to the new relational table
-        const { error: syncError } = await syncProjectComponents(
-          components,
-          projectId,
-        );
-
-        if (syncError) {
-          console.error("Autosave components failed:", syncError);
-        }
-      } catch (e) {
-        console.error("Unexpected error during autosave:", e);
-      }
-    }, 800);
-
-    return () => {
-      if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
-      }
-    };
-  }, [components, projectId, projectName, readOnly]);
 
   // Load components from localStorage on initial render
 
@@ -1058,7 +1003,8 @@ export function Canvas({
       };
 
       const undo = () => {
-        onUpdateComponent(id, previousState);
+        onAddComponent(component);
+        onSelectComponent(component);
       };
 
       // Only add to history if this is a position update (to avoid cluttering history with intermediate states)
@@ -1464,6 +1410,22 @@ export function Canvas({
             ? { paddingTop: RULER_SIZE, paddingLeft: RULER_SIZE }
             : {}),
         }}
+        onMouseMove={(e) => {
+          if (!canvasRef.current || !onCursorMove) return;
+
+          const rect = canvasRef.current.getBoundingClientRect();
+          const scale = getEffectiveScale();
+
+          const x =
+            (e.clientX - rect.left + canvasRef.current.scrollLeft) / scale;
+          const y =
+            (e.clientY - rect.top + canvasRef.current.scrollTop) / scale;
+
+          onCursorMove({ x, y });
+        }}
+        onMouseLeave={() => {
+          onCursorLeave?.();
+        }}
         onWheel={handleWheel}
         onMouseDown={handleCanvasMouseDown}
         onScroll={handleCanvasScroll}
@@ -1562,7 +1524,7 @@ export function Canvas({
                 ...canvasStyle,
               }}
             >
-              {filteredComponents.length === 0 ? (
+              {filteredComponents.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
                   <div className="text-center animate-in fade-in zoom-in duration-500">
                     <div
@@ -1604,148 +1566,218 @@ export function Canvas({
                     </div>
                   </div>
                 </div>
-              ) : (
-                <>
-                  {filteredComponents.map((component) => {
-                    const position = component.position || { x: 100, y: 100 };
-                    const isSelected = selectedComponents.has(component.id);
-                    const isDragging = draggingComponent === component.id;
-
-                    return (
-                      <div
-                        key={component.id}
-                        data-component-id={component.id}
-                        className={`absolute transition-shadow duration-200 ${
-                          isSelected
-                            ? "z-50 ring-2 ring-primary shadow-2xl"
-                            : isDragging
-                              ? "z-40"
-                              : "z-auto"
-                        } ${isDragging ? "cursor-grabbing" : readOnly ? "cursor-default" : "cursor-grab"}`}
-                        style={{
-                          left: `${position.x}px`,
-                          top: `${position.y}px`,
-                          width: "fit-content",
-                          height: "fit-content",
-                          pointerEvents: "auto",
-                        }}
-                        onMouseDown={
-                          !readOnly
-                            ? (e) => handleComponentMouseDown(e, component)
-                            : undefined
-                        }
-                        onTouchStart={
-                          !readOnly
-                            ? (e) => handleComponentTouchStart(e, component)
-                            : undefined
-                        }
-                        onClick={
-                          !readOnly
-                            ? (e) => {
-                                e.stopPropagation();
-
-                                if (e.ctrlKey || e.metaKey) {
-                                  // Multi-select with Ctrl/Cmd key
-                                  const newSelection = new Set(
-                                    selectedComponents,
-                                  );
-                                  if (newSelection.has(component.id)) {
-                                    newSelection.delete(component.id);
-                                  } else {
-                                    newSelection.add(component.id);
-                                  }
-                                  setSelectedComponents(newSelection);
-                                } else {
-                                  // Single select
-                                  setSelectedComponents(
-                                    new Set([component.id]),
-                                  );
-                                }
-                                onSelectComponent(component);
-                              }
-                            : undefined
-                        }
-                        onContextMenu={
-                          !readOnly
-                            ? (e) => {
-                                handleComponentContextMenu(e, component);
-                              }
-                            : undefined
-                        }
-                        onDoubleClick={
-                          !readOnly
-                            ? (e) => handleComponentDoubleClick(component, e)
-                            : undefined
-                        }
-                      >
-                        <RenderableComponent
-                          component={component}
-                          isSelected={readOnly ? false : isSelected}
-                          onUpdate={
-                            !readOnly
-                              ? (updates) => {
-                                  if (
-                                    !updates.position &&
-                                    updates.style?.width === undefined
-                                  ) {
-                                    onUpdateComponent(component.id, updates);
-                                    return;
-                                  }
-
-                                  const constrainedUpdates =
-                                    constrainUpdatesToCanvasWidth(
-                                      component,
-                                      updates,
-                                    );
-
-                                  onUpdateComponent(
-                                    component.id,
-                                    constrainedUpdates,
-                                  );
-                                }
-                              : () => {}
-                          }
-                          onDelete={
-                            !readOnly
-                              ? () => onDeleteComponent(component.id)
-                              : () => {}
-                          }
-                          editingComponentId={readOnly ? null : editingTextId}
-                          onEditComponent={setEditingTextId}
-                          userProjectConfig={userProjectConfig}
-                          isPreview={readOnly}
-                        />
-
-                        {/* Desktop Selection Indicator - Hide in Read Only */}
-                        {!readOnly && isSelected && (
-                          <div className="hidden lg:block absolute -top-8 left-0 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full shadow-lg font-medium z-30 pointer-events-none">
-                            <span className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
-                              {component.type.charAt(0).toUpperCase() +
-                                component.type.slice(1)}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Position Indicator - Hide in Read Only */}
-                        {!readOnly && isSelected && (
-                          <div className="hidden lg:block absolute -bottom-8 left-0 bg-muted text-muted-foreground text-xs px-2 py-1 rounded shadow-md font-mono z-30 pointer-events-none">
-                            x: {Math.round(position.x)} y:{" "}
-                            {Math.round(position.y)}
-                          </div>
-                        )}
-
-                        {/* Mobile Selection Indicator - Hide in Read Only */}
-                        {!readOnly && isSelected && (
-                          <div className="lg:hidden absolute -top-6 left-0 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full shadow-md font-medium z-30 pointer-events-none">
-                            {component.type}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </>
               )}
+              {Array.from(remoteCursors.values()).map((cursor) => (
+                <div
+                  key={cursor.clientId}
+                  className="absolute pointer-events-none z-[9999]"
+                  style={{
+                    left: `${cursor.x}px`,
+                    top: `${cursor.y}px`,
+                    transform: "translate(-2px, -2px)",
+                    overflow: "visible",
+                  }}
+                >
+                  <svg
+                    width="22"
+                    height="30"
+                    viewBox="0 0 18 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    style={{
+                      display: "block",
+                      overflow: "visible",
+                      filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.28))",
+                    }}
+                  >
+                    <path
+                      d="M2 2L2 18L6.5 14.5L9.5 21L12 20L9 13.5L15.5 13L2 2Z"
+                      fill={cursor.user?.color || "#3b82f6"}
+                      stroke="white"
+                      strokeWidth="1.5"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 16,
+                      left: 12,
+                      display: "inline-block",
+                      padding: "2px 8px",
+                      borderRadius: 9999,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      lineHeight: 1.4,
+                      color: "white",
+                      background: cursor.user?.color || "#3b82f6",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {cursor.user?.name || "Guest"}
+                  </div>
+                </div>
+              ))}
+
+              {filteredComponents.map((component) => {
+                const position = component.position || { x: 100, y: 100 };
+                const isSelected = selectedComponents.has(component.id);
+                const isDragging = draggingComponent === component.id;
+
+                return (
+                  <div
+                    key={component.id}
+                    data-component-id={component.id}
+                    className={`absolute transition-shadow duration-200 ${
+                      isSelected
+                        ? "z-50 ring-2 ring-primary shadow-2xl"
+                        : isDragging
+                          ? "z-40"
+                          : "z-auto"
+                    } ${isDragging ? "cursor-grabbing" : readOnly ? "cursor-default" : "cursor-grab"}`}
+                    style={{
+                      left: `${position.x}px`,
+                      top: `${position.y}px`,
+                      width: "fit-content",
+                      height: "fit-content",
+                      pointerEvents: "auto",
+                    }}
+                    onMouseDown={
+                      !readOnly
+                        ? (e) => handleComponentMouseDown(e, component)
+                        : undefined
+                    }
+                    onTouchStart={
+                      !readOnly
+                        ? (e) => handleComponentTouchStart(e, component)
+                        : undefined
+                    }
+                    onClick={
+                      !readOnly
+                        ? (e) => {
+                            e.stopPropagation();
+
+                            if (e.ctrlKey || e.metaKey) {
+                              // Multi-select with Ctrl/Cmd key
+                              const newSelection = new Set(selectedComponents);
+                              if (newSelection.has(component.id)) {
+                                newSelection.delete(component.id);
+                              } else {
+                                newSelection.add(component.id);
+                              }
+                              setSelectedComponents(newSelection);
+                            } else {
+                              // Single select
+                              setSelectedComponents(new Set([component.id]));
+                            }
+                            onSelectComponent(component);
+                          }
+                        : undefined
+                    }
+                    onContextMenu={
+                      !readOnly
+                        ? (e) => {
+                            handleComponentContextMenu(e, component);
+                          }
+                        : undefined
+                    }
+                    onDoubleClick={
+                      !readOnly
+                        ? (e) => handleComponentDoubleClick(component, e)
+                        : undefined
+                    }
+                  >
+                    <RenderableComponent
+                      component={component}
+                      isSelected={readOnly ? false : isSelected}
+                      onUpdate={
+                        !readOnly
+                          ? (updates) => {
+                              if (
+                                !updates.position &&
+                                updates.style?.width === undefined
+                              ) {
+                                onUpdateComponent(component.id, updates);
+                                return;
+                              }
+
+                              const constrainedUpdates =
+                                constrainUpdatesToCanvasWidth(
+                                  component,
+                                  updates,
+                                );
+
+                              onUpdateComponent(
+                                component.id,
+                                constrainedUpdates,
+                              );
+                            }
+                          : () => {}
+                      }
+                      onDelete={
+                        !readOnly
+                          ? () => onDeleteComponent(component.id)
+                          : () => {}
+                      }
+                      editingComponentId={readOnly ? null : editingTextId}
+                      onEditComponent={setEditingTextId}
+                      userProjectConfig={userProjectConfig}
+                      isPreview={readOnly}
+                      activePageId={activePageId}
+                      currentUser={currentUser}
+                      selectedComponents={selectedComponents}
+                      onSelect={
+                        !readOnly
+                          ? (childComp, e) => {
+                              e.stopPropagation();
+                              if (e.ctrlKey || e.metaKey) {
+                                const newSelection = new Set(
+                                  selectedComponents,
+                                );
+                                if (newSelection.has(childComp.id)) {
+                                  newSelection.delete(childComp.id);
+                                } else {
+                                  newSelection.add(childComp.id);
+                                }
+                                setSelectedComponents(newSelection);
+                              } else {
+                                setSelectedComponents(new Set([childComp.id]));
+                              }
+                              onSelectComponent(childComp);
+                            }
+                          : undefined
+                      }
+                    />
+
+                    {/* Desktop Selection Indicator - Hide in Read Only */}
+                    {!readOnly && isSelected && (
+                      <div className="hidden lg:block absolute -top-8 left-0 bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full shadow-lg font-medium z-30 pointer-events-none">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                          {component.type.charAt(0).toUpperCase() +
+                            component.type.slice(1)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Position Indicator - Hide in Read Only */}
+                    {!readOnly && isSelected && (
+                      <div className="hidden lg:block absolute -bottom-8 left-0 bg-muted text-muted-foreground text-xs px-2 py-1 rounded shadow-md font-mono z-30 pointer-events-none">
+                        x: {Math.round(position.x)} y: {Math.round(position.y)}
+                      </div>
+                    )}
+
+                    {/* Mobile Selection Indicator - Hide in Read Only */}
+                    {!readOnly && isSelected && (
+                      <div className="lg:hidden absolute -top-6 left-0 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full shadow-md font-medium z-30 pointer-events-none">
+                        {component.type}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         })()}

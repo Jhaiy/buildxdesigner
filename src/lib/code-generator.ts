@@ -4,16 +4,14 @@ import { ComponentData } from "../App"
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DESIGN_WIDTH = 1920;
 
-// Breakpoints (max-width, so these are "below X" overrides)
 const BREAKPOINTS = {
   tablet: 1024,
   mobile: 768,
 } as const;
 
-// Scale factors relative to desktop (1920px baseline)
 const SCALE = {
-  tablet: BREAKPOINTS.tablet / DESIGN_WIDTH,  // ~0.533
-  mobile: BREAKPOINTS.mobile / DESIGN_WIDTH,  // ~0.400
+  tablet: BREAKPOINTS.tablet / DESIGN_WIDTH,
+  mobile: BREAKPOINTS.mobile / DESIGN_WIDTH,
 } as const;
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -26,7 +24,6 @@ const camelToKebab = (value: string): string =>
 const isUnitless = (key: string) =>
   ["opacity", "zIndex", "fontWeight", "lineHeight", "flex", "order"].includes(key);
 
-/** Parse a CSS value to a raw number (strips px / %). Returns null if unparseable. */
 const parsePixelValue = (value: any): number | null => {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
@@ -39,18 +36,43 @@ const parsePixelValue = (value: any): number | null => {
 const sanitizeId = (id: string): string =>
   id.replace(/[^a-zA-Z0-9_-]/g, "-");
 
-const compIdClass = (component: ComponentData): string =>
-  `comp-${sanitizeId(component.id)}`;
+// ── Collect all components recursively (flattens nested children) ──
+const collectAllComponents = (components: ComponentData[]): ComponentData[] =>
+  components.flatMap(c => [c, ...collectAllComponents(c.children ?? [])]);
+
+// ── Readable ID detection ──────────────────────────────────────────────────────
+// New IDs look like "navbar-main", "button-primary" (type-suffix, no digits run ≥5)
+// Old IDs look like "code-17729832817420-4459" (has long digit sequences)
+const isReadableId = (id: string): boolean => {
+  if (!id) return false;
+  // If it already has a comp- prefix, it's legacy
+  if (id.startsWith("comp-")) return false;
+  // If it contains a run of 5+ digits, it's a timestamp-based legacy ID
+  if (/\d{5,}/.test(id)) return false;
+  // Must be kebab-case with at least one hyphen
+  return /^[a-z][a-z0-9-]+-[a-z][a-z0-9-]*$/.test(id);
+};
+
+// Return the CSS class name for a component (no comp- prefix for readable IDs)
+const compIdClass = (component: ComponentData): string => {
+  const id = sanitizeId(component.id);
+  // Readable new-format ID → use directly as class
+  if (isReadableId(component.id)) return id;
+  // Legacy ID → keep comp- prefix for backward compatibility
+  return `comp-${id}`;
+};
 
 const compClass = (component: ComponentData): string => {
   const idClass = compIdClass(component);
   const userClass = component.props?.className;
-  const isAutoClass = !userClass || /^comp-/.test(userClass.trim().split(/\s+/)[0]);
+  // Skip userClass if it's auto-generated (matches the idClass, or starts with comp-)
+  const isAutoClass = !userClass
+    || userClass.trim() === idClass
+    || /^comp-/.test(userClass.trim().split(/\s+/)[0]);
   return isAutoClass ? idClass : `${idClass} ${userClass}`;
 };
 
 // ─── CSS rule builder ─────────────────────────────────────────────────────────
-/** Render a plain style object to CSS lines (no responsive transforms). */
 const toCssRule = (style: Record<string, any> = {}): string =>
   Object.entries(style)
     .filter(([, value]) => value !== undefined && value !== null && value !== "")
@@ -60,20 +82,11 @@ const toCssRule = (style: Record<string, any> = {}): string =>
     })
     .join("\n");
 
-/** Scale a single px value by a ratio, returning a rounded px string. */
 const scalePx = (value: number, ratio: number): string =>
   `${Math.round(value * ratio)}px`;
 
-// Component types that should span full width and stack normally on small screens
 const FULL_WIDTH_TYPES = new Set(["navbar", "hero", "footer", "section-heading"]);
 
-/**
- * Build responsive CSS for one component.
- * Desktop : absolute positioning matching the 1920px canvas.
- * Tablet/Mobile:
- *   - FULL_WIDTH_TYPES → position:relative; width:100%  (proper responsive flow)
- *   - Everything else  → keep absolute, scale offsets/sizes by viewport ratio
- */
 const buildResponsiveCss = (
   component: ComponentData,
   position: { x: number; y: number } | undefined,
@@ -82,7 +95,6 @@ const buildResponsiveCss = (
   const cls   = `.${compIdClass(component)}`;
   const isFullWidth = FULL_WIDTH_TYPES.has(component.type);
 
-  // ── Desktop block ──────────────────────────────────────────────────────────
   const desktopLines: string[] = [`  position: absolute;`];
 
   if (position) {
@@ -96,13 +108,10 @@ const buildResponsiveCss = (
   if (rawH !== null) desktopLines.push(`  height: ${rawH}px;`);
 
   for (const [key, value] of Object.entries(style)) {
-    // Skip layout props already handled above; but KEEP position for navbar sticky/fixed
     if (["left","top","right","bottom","width","height"].includes(key)) continue;
-    // Skip position:absolute (we set it ourselves) but keep sticky/fixed/relative from user
     if (key === "position" && value === "absolute") continue;
     if (value === undefined || value === null || value === "") continue;
     const unit = typeof value === "number" && !isUnitless(key) ? "px" : "";
-    // CSS custom properties (--nav-hover etc.) are already kebab-case — don't transform them
     const cssKey = key.startsWith("--") ? key : camelToKebab(key);
     desktopLines.push(`  ${cssKey}: ${value}${unit};`);
   }
@@ -114,13 +123,11 @@ const buildResponsiveCss = (
     css += `\n\n@media (max-width: ${BREAKPOINTS.mobile}px) {\n  ${cls} {\n    display: flex;\n    flex-wrap: wrap;\n    align-items: center;\n  }\n  ${cls} .nav-toggle {\n    display: flex !important;\n  }\n  ${cls} .nav-links {\n    display: none;\n    width: 100%;\n    order: 3;\n  }\n  ${cls} .nav-links.open {\n    display: flex !important;\n  }\n}`;
   }
 
-  // ── Tablet + Mobile overrides ──────────────────────────────────────────────
   for (const [bpName, bpMax] of Object.entries(BREAKPOINTS) as [keyof typeof BREAKPOINTS, number][]) {
     const ratio = SCALE[bpName];
     const bpLines: string[] = [];
 
     if (isFullWidth) {
-      // Full-width components: break out of absolute flow, span the screen
       bpLines.push(`  position: relative;`);
       bpLines.push(`  left: 0;`);
       bpLines.push(`  top: 0;`);
@@ -163,7 +170,8 @@ const renderComponentToPHP = (component: ComponentData, depth = 0): string => {
   const props  = component.props ?? {};
   const cls    = compClass(component);
   const idAttr = props.elementId ? ` id="${esc(props.elementId)}"` : "";
-  const btnId  = component.type === "button" ? ` id="btn-${sanitizeId(component.id)}"` : "";
+  // Button JS ID uses the same class name (readable or legacy)
+  const btnId  = component.type === "button" ? ` id="btn-${compIdClass(component)}"` : "";
   const childOutput = (component.children ?? [])
     .map((child) => renderComponentToPHP(child, depth + 1))
     .join("\n");
@@ -188,21 +196,21 @@ const renderComponentToPHP = (component: ComponentData, depth = 0): string => {
       return `${indent}<img${idAttr} src="${esc(props.src)}" alt="${esc(props.alt) || "image"}" class="${cls}" />`;
 
     case "navbar": {
-      // PropertiesPanel stores: props.brand (string) + props.links (string[])
       const brand = esc(props.brand || "");
       const links: string[] = Array.isArray(props.links) && props.links.length > 0
         ? props.links
         : ["Home", "About", "Contact"];
+      const linkUrls: string[] = Array.isArray(props.linkUrls) ? props.linkUrls : [];
 
-      // Map each link label to a URL slug for the href
-      const toHref = (label: string) => {
-        const slug = label.toLowerCase().replace(/\s+/g, "-");
-        return slug === "home" ? "/" : `/${slug}`;
-      };
-
-      const linkItems = links
-        .map((l: string) => `${indent}    <li><a href="${toHref(l)}">${esc(l)}</a></li>`)
-        .join("\n");
+const linkItems = links
+  .map((l: string, i: number) => {
+    const raw = linkUrls[i];
+    const href = raw && raw.trim() !== "" && raw.trim() !== "#"
+      ? raw.trim()
+      : "#";
+    return `${indent}    <li><a href="${esc(href)}">${esc(l)}</a></li>`;
+  })
+  .join("\n");
 
       return [
         `${indent}<nav${idAttr} class="${cls} full-width-block">`,
@@ -288,7 +296,7 @@ const generatePageJS = (components: ComponentData[], pageName: string): string =
   const hasNavbar = components.some(c => c.type === "navbar");
   const buttons = components.filter(c => c.type === "button");
   const listeners = buttons.map(btn => {
-    const id = `btn-${sanitizeId(btn.id)}`;
+    const id = `btn-${compIdClass(btn)}`;
     return `// Event listener for ${btn.props?.content || "Button"}\n  document.getElementById("${id}")?.addEventListener("click", () => {\n    console.log("${id} clicked!");\n  });`;
   }).join("\n\n  ");
 
@@ -396,7 +404,6 @@ img { max-width: 100%; height: auto; }
   transition: transform 0.25s ease, opacity 0.2s ease;
   transform-origin: center;
 }
-/* Animated X when open */
 .nav-toggle[aria-expanded="true"] .burger-bar:nth-child(1) {
   transform: translateY(7px) rotate(45deg);
 }
@@ -408,14 +415,12 @@ img { max-width: 100%; height: auto; }
   transform: translateY(-7px) rotate(-45deg);
 }
 
-/* ── Tablet (≤${BREAKPOINTS.tablet}px): switch to normal block flow + show burger ── */
 @media (max-width: ${BREAKPOINTS.tablet}px) {
   .canvas-container {
     position: static;
     display: block;
     min-height: 100svh;
   }
-  /* Full-width components snap to block flow */
   .canvas-container nav,
   .canvas-container .full-width-block {
     position: relative !important;
@@ -423,9 +428,7 @@ img { max-width: 100%; height: auto; }
     top: 0 !important;
     width: 100% !important;
   }
-  /* Show burger on tablet too */
   .canvas-container .nav-toggle { display: flex !important; }
-  /* Hide links by default, show as vertical dropdown */
   .canvas-container nav .nav-links {
     display: none;
     flex-direction: column;
@@ -448,7 +451,6 @@ img { max-width: 100%; height: auto; }
   }
 }
 
-/* ── Mobile (≤${BREAKPOINTS.mobile}px) ── */
 @media (max-width: ${BREAKPOINTS.mobile}px) {
   .canvas-container .nav-toggle { display: flex !important; } 
   .canvas-container {
@@ -471,13 +473,12 @@ img { max-width: 100%; height: auto; }
 }
 `;
 
-// ─── HTML page wrapper (adds viewport meta tag) ────────────────────────────────
+// ─── HTML page wrapper ────────────────────────────────────────────────────────
 const generateHTMLWrapper = (pageName: string, fileName: string, bodyContent: string): string =>
 `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <!-- Viewport meta is CRITICAL for responsiveness on mobile devices -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title><?php echo htmlspecialchars($pageTitle ?? "${pageName}"); ?></title>
   <link rel="stylesheet" href="assets/css/global.css" />
@@ -490,33 +491,434 @@ ${bodyContent}
 </html>`;
 
 // ─── Main export ──────────────────────────────────────────────────────────────
+// ─── ID migration ────────────────────────────────────────────────────────────
+// Maps component types to readable suffixes (mirrors CodeViewEditor's SEMANTIC_SUFFIXES)
+const SEMANTIC_SUFFIXES_GEN: Record<string, string[]> = {
+  navbar: ["main","top","site","primary"], hero: ["main","banner","top","landing"],
+  footer: ["main","site","bottom","primary"], heading: ["title","main","primary","section"],
+  text: ["body","content","copy","description"], paragraph: ["intro","body","content","description"],
+  button: ["primary","cta","action","submit"], image: ["main","hero","cover","featured"],
+  input: ["field","name","email","search"], textarea: ["message","bio","notes","content"],
+  select: ["field","option","filter","dropdown"], checkbox: ["field","agree","option","toggle"],
+  "radio-group": ["options","choice","field","selector"], card: ["item","feature","product","profile"],
+  container: ["wrapper","section","block","content"], grid: ["layout","gallery","features","cards"],
+  form: ["contact","signup","login","subscribe"], divider: ["section","main","content","break"],
+  accordion: ["faq","main","content","details"], tabs: ["main","content","sections","nav"],
+  modal: ["dialog","popup","confirm","info"], alert: ["info","warning","success","error"],
+  table: ["data","main","list","records"], gallery: ["images","portfolio","photos","work"],
+  carousel: ["slides","hero","featured","promo"], "section-heading": ["main","about","features","services"],
+  "sign-in": ["form","main","user","auth"], "sign-up": ["form","main","register","auth"],
+  "paymongo-button": ["pay","checkout","buy","order"], video: ["main","hero","promo","embed"],
+};
+
+function pickReadableId(type: string, used: Set<string>): string {
+  const suffixes = SEMANTIC_SUFFIXES_GEN[type] ?? ["main","content","block","section"];
+  for (const suffix of suffixes) {
+    const c = `${type}-${suffix}`; if (!used.has(c)) { used.add(c); return c; }
+  }
+  for (const suffix of suffixes) {
+    for (let n = 2; n <= 20; n++) {
+      const c = `${type}-${suffix}-${n}`; if (!used.has(c)) { used.add(c); return c; }
+    }
+  }
+  const c = `${type}-${Date.now().toString(36).slice(-4)}`; used.add(c); return c;
+}
+
+/**
+ * Returns a copy of components with all legacy IDs replaced by readable ones.
+ * Pure function — does NOT mutate the input array.
+ */
+function migrateToReadableIds(components: ComponentData[]): ComponentData[] {
+  const used = new Set(components.filter(c => isReadableId(c.id)).map(c => c.id));
+  
+  const migrate = (c: ComponentData): ComponentData => {
+    const newId = isReadableId(c.id) ? c.id : pickReadableId(c.type, used);
+    return {
+      ...c,
+      id: newId,
+      children: c.children?.map(migrate),  // ← recurse into children
+    };
+  };
+  
+  return components.map(migrate);
+}
+
 export const generateProjectFiles = (
   components: ComponentData[],
   pages: any[],
   projectName: string,
 ): Record<string, string> => {
-  const files: Record<string, string> = {
+  // Migrate all legacy timestamp IDs to readable names before generating any files
+  const migratedComponents = migrateToReadableIds(components);
+
+const files: Record<string, string> = {
     "public/index.php": `<?php require_once __DIR__ . "/../app/views/layout.php"; ?>`,
     "app/views/layout.php": `<?php // Global Layout for ${projectName} ?>`,
-    // Global CSS now includes the responsive reset + viewport rules
     "public/assets/css/global.css": GLOBAL_RESPONSIVE_CSS,
-    // Keep the old styles.css for backward compat — just re-export global reset
     "public/assets/css/styles.css": `/* Deprecated: use global.css */\n@import "global.css";`,
     "config/database.php": `<?php\nreturn [\n    "db_host" => "db.supabase.co",\n    "db_name" => "postgres",\n];`,
-    "README.md": `# ${projectName}\nGenerated PHP Project.\n\n## Responsive Design\n- Desktop: 1920px baseline\n- Tablet: ≤${BREAKPOINTS.tablet}px\n- Mobile: ≤${BREAKPOINTS.mobile}px`,
+    "README.md": `# ${projectName}
+
+    Generated by PHP Builder.
+
+    ## 🚀 Quick Start
+
+    ### 1. Add your Supabase credentials
+    Open \`config/supabase.php\` and replace the placeholder values:
+
+    \`\`\`php
+    define('SUPABASE_URL', 'https://your-project.supabase.co');
+    define('SUPABASE_ANON_KEY', 'your-anon-key');
+    define('SUPABASE_SERVICE_KEY', 'your-service-role-key');
+    \`\`\`
+
+    Get your keys from: https://app.supabase.com → Settings → API
+
+    ### 2. Run locally
+    Make sure PHP is installed, then run this in the project folder:
+
+    \`\`\`bash
+    php -S localhost:8000 -t public/
+    \`\`\`
+
+    Then open http://localhost:8000 in your browser.
+
+    ### 3. Deploy
+    Upload all files to any PHP host (Hostinger, cPanel, etc.)
+    Point the document root to the \`public/\` folder.
+
+    ## 📁 Project Structure
+
+    \`\`\`
+    config/
+      supabase.php        ← Your Supabase credentials (keep private!)
+    app/
+      lib/supabase.php    ← Supabase PHP client
+      api/
+        auth.php          ← Sign in / Sign up / Sign out
+        data.php          ← Read / Write / Delete data
+      views/              ← Your pages
+    public/
+      assets/css/         ← Stylesheets
+      assets/js/          ← JavaScript
+    \`\`\`
+
+    ## 🔌 Using Supabase in your pages
+
+    \`\`\`php
+    <?php
+    require_once __DIR__ . '/../../app/lib/supabase.php';
+
+    \$db = new Supabase();
+
+    // Fetch data
+    \$result = \$db->select('your_table', '*', [], 10);
+    \$rows = \$result['data'];
+
+    // Insert data
+    \$db->insert('your_table', ['name' => 'John', 'email' => 'john@example.com']);
+
+    // Protect a page (redirect if not logged in)
+    SupabaseSession::requireAuth('/login');
+    \$user = SupabaseSession::getUser();
+    ?>
+    \`\`\`
+
+    ## 🌐 API Endpoints
+
+    | Endpoint | Method | Description |
+    |----------|--------|-------------|
+    | app/api/auth.php | POST | signin, signup, signout |
+    | app/api/data.php | GET | fetch rows from any table |
+    | app/api/data.php | POST | insert, update, delete rows |
+
+    ## 📦 Requirements
+    - PHP 8.0 or higher
+    - cURL extension enabled
+    - A Supabase project (free at supabase.com)
+
+    ## 🔒 Security Notes
+    - Never commit \`config/supabase.php\` to Git — add it to \`.gitignore\`
+    - Use the Service Key only for trusted server-side operations
+    - Enable Row Level Security (RLS) on your Supabase tables
+
+    ## 📐 Responsive Design
+    - Desktop: ${DESIGN_WIDTH}px baseline
+    - Tablet: ≤${BREAKPOINTS.tablet}px
+    - Mobile: ≤${BREAKPOINTS.mobile}px
+    `,
+    "config/supabase.php": `<?php
+define('SUPABASE_URL', getenv('SUPABASE_URL') ?: 'https://your-project.supabase.co');
+define('SUPABASE_ANON_KEY', getenv('SUPABASE_ANON_KEY') ?: 'your-anon-key');
+define('SUPABASE_SERVICE_KEY', getenv('SUPABASE_SERVICE_KEY') ?: 'your-service-role-key');
+`,
+
+    "app/lib/supabase.php": `<?php
+require_once __DIR__ . '/../../config/supabase.php';
+
+class Supabase {
+  private string $url;
+  private string $key;
+
+  public function __construct(bool $useServiceKey = false) {
+    $this->url = rtrim(SUPABASE_URL, '/');
+    $this->key = $useServiceKey ? SUPABASE_SERVICE_KEY : SUPABASE_ANON_KEY;
+  }
+
+  private function request(string $method, string $endpoint, array $body = [], array $query = [], array $headers = []): array {
+    $url = $this->url . '/rest/v1/' . ltrim($endpoint, '/');
+    if (!empty($query)) $url .= '?' . http_build_query($query);
+    $ch = curl_init($url);
+    $defaultHeaders = [
+      'apikey: ' . $this->key,
+      'Authorization: Bearer ' . $this->key,
+      'Content-Type: application/json',
+      'Prefer: return=representation',
+    ];
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_CUSTOMREQUEST  => strtoupper($method),
+      CURLOPT_HTTPHEADER     => array_merge($defaultHeaders, $headers),
+    ]);
+    if (!empty($body)) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+    $response = curl_exec($ch);
+    $status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $decoded = json_decode($response, true);
+    return ['data' => $decoded, 'status' => $status, 'error' => ($status >= 400) ? $decoded : null];
+  }
+
+  public function signUp(string $email, string $password, array $metadata = []): array {
+    $ch = curl_init($this->url . '/auth/v1/signup');
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_POST           => true,
+      CURLOPT_POSTFIELDS     => json_encode(['email' => $email, 'password' => $password, 'data' => $metadata]),
+      CURLOPT_HTTPHEADER     => ['apikey: ' . $this->key, 'Content-Type: application/json'],
+    ]);
+    $res = json_decode(curl_exec($ch), true);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ['data' => $res, 'status' => $status, 'error' => $status >= 400 ? $res : null];
+  }
+
+  public function signIn(string $email, string $password): array {
+    $ch = curl_init($this->url . '/auth/v1/token?grant_type=password');
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_POST           => true,
+      CURLOPT_POSTFIELDS     => json_encode(['email' => $email, 'password' => $password]),
+      CURLOPT_HTTPHEADER     => ['apikey: ' . $this->key, 'Content-Type: application/json'],
+    ]);
+    $res = json_decode(curl_exec($ch), true);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ['data' => $res, 'status' => $status, 'error' => $status >= 400 ? $res : null];
+  }
+
+  public function signOut(string $accessToken): array {
+    $ch = curl_init($this->url . '/auth/v1/logout');
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_POST           => true,
+      CURLOPT_HTTPHEADER     => ['apikey: ' . $this->key, 'Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'],
+    ]);
+    curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ['status' => $status];
+  }
+
+  public function getUser(string $accessToken): array {
+    $ch = curl_init($this->url . '/auth/v1/user');
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_HTTPHEADER     => ['apikey: ' . $this->key, 'Authorization: Bearer ' . $accessToken],
+    ]);
+    $res = json_decode(curl_exec($ch), true);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ['data' => $res, 'status' => $status, 'error' => $status >= 400 ? $res : null];
+  }
+
+  public function select(string $table, string $columns = '*', array $filters = [], ?int $limit = null, ?int $offset = null, ?string $order = null): array {
+    $query = ['select' => $columns];
+    foreach ($filters as $col => $val) $query[$col] = 'eq.' . $val;
+    if ($limit  !== null) $query['limit']  = $limit;
+    if ($offset !== null) $query['offset'] = $offset;
+    if ($order  !== null) $query['order']  = $order;
+    return $this->request('GET', $table, [], $query);
+  }
+
+  public function insert(string $table, array $data): array {
+    return $this->request('POST', $table, $data);
+  }
+
+  public function update(string $table, array $data, array $filters = []): array {
+    $query = [];
+    foreach ($filters as $col => $val) $query[$col] = 'eq.' . $val;
+    return $this->request('PATCH', $table, $data, $query);
+  }
+
+  public function delete(string $table, array $filters = []): array {
+    $query = [];
+    foreach ($filters as $col => $val) $query[$col] = 'eq.' . $val;
+    return $this->request('DELETE', $table, [], $query);
+  }
+
+  public function rpc(string $functionName, array $params = []): array {
+    $ch = curl_init($this->url . '/rest/v1/rpc/' . $functionName);
+    curl_setopt_array($ch, [
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_POST           => true,
+      CURLOPT_POSTFIELDS     => json_encode($params),
+      CURLOPT_HTTPHEADER     => ['apikey: ' . $this->key, 'Authorization: Bearer ' . $this->key, 'Content-Type: application/json'],
+    ]);
+    $res = json_decode(curl_exec($ch), true);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return ['data' => $res, 'status' => $status, 'error' => $status >= 400 ? $res : null];
+  }
+
+  public function getPublicUrl(string $bucket, string $path): string {
+    return $this->url . '/storage/v1/object/public/' . $bucket . '/' . ltrim($path, '/');
+  }
+}
+
+class SupabaseSession {
+  public static function start(): void {
+    if (session_status() === PHP_SESSION_NONE) session_start();
+  }
+  public static function setUser(array $authData): void {
+    self::start();
+    $_SESSION['supabase_access_token']  = $authData['access_token']  ?? '';
+    $_SESSION['supabase_refresh_token'] = $authData['refresh_token'] ?? '';
+    $_SESSION['supabase_user']          = $authData['user']           ?? [];
+  }
+  public static function getUser(): ?array {
+    self::start();
+    return $_SESSION['supabase_user'] ?? null;
+  }
+  public static function getAccessToken(): ?string {
+    self::start();
+    return $_SESSION['supabase_access_token'] ?? null;
+  }
+  public static function isLoggedIn(): bool {
+    self::start();
+    return !empty($_SESSION['supabase_access_token']);
+  }
+  public static function clear(): void {
+    self::start();
+    unset($_SESSION['supabase_access_token'], $_SESSION['supabase_refresh_token'], $_SESSION['supabase_user']);
+  }
+  public static function requireAuth(string $redirectTo = '/login'): void {
+    if (!self::isLoggedIn()) { header('Location: ' . $redirectTo); exit; }
+  }
+}
+`,
+
+    "app/api/auth.php": `<?php
+require_once __DIR__ . '/../lib/supabase.php';
+header('Content-Type: application/json');
+SupabaseSession::start();
+
+$body   = json_decode(file_get_contents('php://input'), true) ?? [];
+$action = $body['action'] ?? '';
+$db     = new Supabase();
+
+switch ($action) {
+  case 'signup':
+    echo json_encode($db->signUp($body['email'] ?? '', $body['password'] ?? '', $body['metadata'] ?? []));
+    break;
+  case 'signin':
+    $result = $db->signIn($body['email'] ?? '', $body['password'] ?? '');
+    if ($result['status'] === 200 && isset($result['data']['access_token'])) {
+      SupabaseSession::setUser($result['data']);
+    }
+    echo json_encode($result);
+    break;
+  case 'signout':
+    $token = SupabaseSession::getAccessToken();
+    if ($token) $db->signOut($token);
+    SupabaseSession::clear();
+    echo json_encode(['status' => 200, 'message' => 'Signed out']);
+    break;
+  case 'me':
+    $token = SupabaseSession::getAccessToken();
+    echo json_encode($token ? $db->getUser($token) : ['error' => 'Not authenticated', 'status' => 401]);
+    break;
+  default:
+    http_response_code(400);
+    echo json_encode(['error' => 'Unknown action']);
+}
+`,
+
+    "app/api/data.php": `<?php
+require_once __DIR__ . '/../lib/supabase.php';
+header('Content-Type: application/json');
+
+$db     = new Supabase();
+$method = $_SERVER['REQUEST_METHOD'];
+
+if ($method === 'GET') {
+  $table   = $_GET['table']  ?? '';
+  $columns = $_GET['select'] ?? '*';
+  $limit   = isset($_GET['limit'])  ? (int)$_GET['limit']  : null;
+  $offset  = isset($_GET['offset']) ? (int)$_GET['offset'] : null;
+  $order   = $_GET['order']  ?? null;
+  $reserved = ['table','select','limit','offset','order'];
+  $filters  = array_diff_key($_GET, array_flip($reserved));
+  echo json_encode($db->select($table, $columns, $filters, $limit, $offset, $order));
+  exit;
+}
+
+$body    = json_decode(file_get_contents('php://input'), true) ?? [];
+$table   = $body['table']   ?? '';
+$action  = $body['action']  ?? $method;
+$data    = $body['data']    ?? [];
+$filters = $body['filters'] ?? [];
+
+switch (strtolower($action)) {
+  case 'insert': case 'post':   echo json_encode($db->insert($table, $data)); break;
+  case 'update': case 'patch':  echo json_encode($db->update($table, $data, $filters)); break;
+  case 'delete':                echo json_encode($db->delete($table, $filters)); break;
+  case 'rpc':                   echo json_encode($db->rpc($body['function'] ?? '', $data)); break;
+  default: http_response_code(400); echo json_encode(['error' => 'Unknown action: ' . $action]);
+}
+`,
+
+    ".env.example": `SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+SUPABASE_SERVICE_KEY=your-service-role-key-here
+`,
+
+    ".htaccess": `RewriteEngine On
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteRule ^(.*)$ /public/$1 [L]
+
+<FilesMatch "^\\.(env|htpasswd)">
+  Order Allow,Deny
+  Deny from all
+</FilesMatch>
+`,
+
+    "public/.htaccess": `RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+`,
   };
 
   pages.forEach((page, index) => {
     const fileName = slugify(page.name);
 
-    const pageComponents = components.filter(c => {
+    const pageComponents = migratedComponents.filter(c => {
       const isExplicitMatch = c.page_id === page.id;
       const isGlobal = c.page_id === "all";
       const isDefaultHome = !c.page_id && (page.id === "home" || index === 0);
       return isExplicitMatch || isGlobal || isDefaultHome;
     });
 
-    // ── PHP view (now wrapped in a full HTML doc with viewport meta) ──────────
     const bodyContent = [
       `<div class="canvas-container">`,
       pageComponents.length > 0
@@ -527,14 +929,10 @@ export const generateProjectFiles = (
 
     files[`app/views/${fileName}.php`] = generateHTMLWrapper(page.name, fileName, bodyContent);
 
-    // ── Responsive CSS ─────────────────────────────────────────────────────────
-    // Each component gets:
-    //   • Desktop block  — position/size as % of 1920px
-    //   • Tablet block   — scaled positions + sizes for ≤1024px
-    //   • Mobile block   — scaled positions + sizes for ≤768px
-    const componentCssBlocks = pageComponents
+    const allPageComponents = collectAllComponents(pageComponents);
+    const componentCssBlocks = allPageComponents
       .filter(c => (c.style && Object.keys(c.style).length > 0) || c.type === "navbar")
-      .map(c => buildResponsiveCss(c, c.position));
+      .map(c => buildResponsiveCss(c, (c as any).position as { x: number; y: number } | undefined));
 
     files[`public/assets/css/${fileName}.css`] = [
       `/* Page: ${page.name} — auto-generated responsive styles */`,
@@ -543,7 +941,6 @@ export const generateProjectFiles = (
       ...componentCssBlocks,
     ].join("\n\n");
 
-    // ── JS ─────────────────────────────────────────────────────────────────────
     files[`public/assets/js/${fileName}.js`] = generatePageJS(pageComponents, page.name);
   });
 

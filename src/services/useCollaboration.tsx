@@ -40,6 +40,8 @@ function useCollaborationLogic({
   const clientIdRef = useRef<string | null>(null);
   const userColorRef = useRef<string | null>(null);
   const cursorPosRef = useRef({ x: 0, y: 0 });
+  const transportCleanupRef = useRef<(() => void) | null>(null);
+  const transportRoomRef = useRef<string | null>(null);
 
   const initCollaborationDoc = useCollaborationDoc(setState);
 
@@ -57,62 +59,31 @@ function useCollaborationLogic({
     replaceProjectName,
   } = initCollaborationDoc;
 
+  const collabInstanceRef = useRef(
+    `collab-${Math.random().toString(36).slice(2, 8)}`,
+  );
+
+  useEffect(() => {
+    console.log("[useCollab] mounted", collabInstanceRef.current);
+    return () => {
+      console.log("[useCollab] unmounted", collabInstanceRef.current);
+    };
+  }, []);
+
   const [remoteCursors, setRemoteCursors] = useState<
     Map<string, { clientId: string; user: any; x: number; y: number }>
   >(new Map());
 
   const ablyKey = import.meta.env.VITE_ABLY_KEY as string | undefined;
-  const activeProjectId = currentProjectId ?? state.currentProjectId ?? null;
+  const activeProjectId =
+    currentProjectId ?? state.currentProjectId ?? projectId ?? null;
   const hydratedProjectRef = useRef<string | null>(null);
   const docProjectIdRef = useRef<string | null>(null);
   const isHydratingRef = useRef(false);
 
   useEffect(() => {
     const { yMeta } = getOrInitDoc();
-    const handleMetaChange = () => {
-      const incoming = yMeta.get("projectName");
-      if (typeof incoming !== "string" || !incoming.trim()) return;
 
-      setState((prev) =>
-        prev.projectName === incoming
-          ? prev
-          : { ...prev, projectName: incoming },
-      );
-    };
-
-    yMeta.observe(handleMetaChange);
-    handleMetaChange();
-
-    return () => yMeta.unobserve(handleMetaChange);
-  }, [getOrInitDoc, setState]);
-
-  useEffect(() => {
-    if (state.currentView !== "editor") {
-      hydratedProjectRef.current = null;
-    }
-  }, [state.currentView]);
-
-  // In useCollaboration.ts - replace the problematic useEffect with this:
-  useEffect(() => {
-    if (state.currentView !== "editor") return;
-    if (!activeProjectId) return;
-
-    // Only clear if switching to a DIFFERENT project, not on every re-render
-    if (
-      docProjectIdRef.current &&
-      docProjectIdRef.current !== activeProjectId
-    ) {
-      replaceComponents([], false);
-      hydratedProjectRef.current = null;
-    }
-
-    docProjectIdRef.current = activeProjectId;
-    // Remove replaceComponents from deps - it's stable enough via ref
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentView, activeProjectId]);
-
-  useEffect(() => {
-    const { yMeta } = getOrInitDoc();
     const handleMetaChange = () => {
       const incoming = yMeta.get("projectName");
       if (typeof incoming !== "string" || !incoming.trim()) return;
@@ -131,6 +102,27 @@ function useCollaborationLogic({
       yMeta.unobserve(handleMetaChange);
     };
   }, [getOrInitDoc, setState]);
+
+  useEffect(() => {
+    if (state.currentView !== "editor") {
+      hydratedProjectRef.current = null;
+    }
+  }, [state.currentView]);
+
+  useEffect(() => {
+    if (state.currentView !== "editor") return;
+    if (!activeProjectId) return;
+
+    if (
+      docProjectIdRef.current &&
+      docProjectIdRef.current !== activeProjectId
+    ) {
+      replaceComponents([], false);
+      hydratedProjectRef.current = null;
+    }
+
+    docProjectIdRef.current = activeProjectId;
+  }, [state.currentView, activeProjectId]);
 
   useEffect(() => {
     const { yComponents, yPages } = getOrInitDoc();
@@ -166,12 +158,12 @@ function useCollaborationLogic({
       const isLocalChanges = consumeLocalChangeFlag();
 
       if (isHydratingRef.current && uniqueComponents.length === 0) return;
-
       setState((prev) => {
-        if (uniqueComponents.length === 0 && prev.components.length > 0 && !isLocalChanges) {
-          // Avoid clearing components during transient Yjs empty states if we already have content
-          // unless it's a legitimate clearCanvas action which usually handles it differently.
-          // This is a safety guard against accidental wipes during sync.
+        if (
+          uniqueComponents.length === 0 &&
+          prev.components.length > 0 &&
+          !isLocalChanges
+        ) {
           return prev;
         }
         return {
@@ -260,18 +252,15 @@ function useCollaborationLogic({
 
     awareness.setLocalStateField("user", {
       id: currentUser?.id ?? clientIdRef.current,
-      name: currentUser?.name ?? currentUser?.email ?? "Guest",
+      name:
+        currentUser?.name ||
+        currentUser?.user_metadata?.full_name ||
+        currentUser?.user_metadata?.name ||
+        currentUser?.full_name ||
+        "Guest",
       color: userColorRef.current,
     });
   }, [currentUser]);
-
-  const handleCanvasMouseMove = (e: MouseEvent) => {
-    const { awareness } = getOrInitDoc();
-    awareness.setLocalStateField("cursor", {
-      x: e.clientX,
-      y: e.clientY,
-    });
-  };
 
   useEffect(() => {
     const { awareness } = getOrInitDoc();
@@ -281,6 +270,7 @@ function useCollaborationLogic({
 
       awareness.getStates().forEach((state: any, clientId: number) => {
         if (clientId === awareness.clientID) return;
+
         if (state.user && state.cursor) {
           newCursors.set(String(clientId), {
             clientId: String(clientId),
@@ -295,13 +285,22 @@ function useCollaborationLogic({
     };
 
     awareness.on("change", handleAwarenessChange);
-    document.addEventListener("mousemove", handleCanvasMouseMove);
+    handleAwarenessChange();
 
     return () => {
       awareness.off("change", handleAwarenessChange);
-      document.removeEventListener("mousemove", handleCanvasMouseMove);
     };
-  }, []);
+  }, [getOrInitDoc]);
+
+  const setLocalCursor = (pos: { x: number; y: number }) => {
+    const { awareness } = getOrInitDoc();
+    awareness.setLocalStateField("cursor", pos);
+  };
+
+  const clearLocalCursor = () => {
+    const { awareness } = getOrInitDoc();
+    awareness.setLocalStateField("cursor", null);
+  };
 
   useEffect(() => {
     if (state.currentView !== "editor") return;
@@ -325,7 +324,6 @@ function useCollaborationLogic({
 
         if (cancelled) return;
 
-        // Always set basic metadata regardless of Yjs state
         if (projectData) {
           const { yMeta } = getOrInitDoc();
           const currentMetaName = yMeta.get("projectName");
@@ -360,12 +358,10 @@ function useCollaborationLogic({
           loadedProject.length > 0 || !projectError;
 
         if (canHydrateFromDatabase) {
-          // Hydrate components if Yjs is empty
           if (yComponents.length === 0) {
             replaceComponents(loadedProject, false);
           }
 
-          // Hydrate pages if Yjs is empty
           if (yPages.length === 0 && projectData?.pages) {
             replacePages(projectData.pages, false);
           }
@@ -387,7 +383,6 @@ function useCollaborationLogic({
           const allPages = yPages.toArray();
           const uniquePages: any[] = [];
           const seenPageIds = new Set<string>();
-          // Combine yPages with projectData.pages if yPages is still getting synced
           const combinedPages =
             allPages.length > 0 ? allPages : projectData?.pages || prev.pages;
           combinedPages.forEach((p: any) => {
@@ -406,6 +401,10 @@ function useCollaborationLogic({
         });
       } finally {
         if (!cancelled) {
+          // FIX 3: Restore the v1 finally block — re-sync yComponents into state
+          // after hydration completes. The new version removed this, causing the
+          // owner's React state to diverge from Yjs when remote updates arrived
+          // during hydration, making the owner unable to see collaborator changes.
           const { yComponents } = getOrInitDoc();
           setState((prev) => ({
             ...prev,
@@ -422,17 +421,40 @@ function useCollaborationLogic({
     };
   }, [
     state.currentView,
-    state.currentUser?.id,
     activeProjectId,
+    getOrInitDoc,
     replaceComponents,
+    replacePages,
+    replaceProjectName,
     setState,
   ]);
 
   useEffect(() => {
-    if (state.currentView !== "editor" || !ablyKey) return;
+    if (state.currentView !== "editor") return;
+    if (!ablyKey) return;
     if (!activeProjectId) return;
+    if (state.projectCanView === false) return;
+
+    if (transportRoomRef.current === activeProjectId) {
+      return;
+    }
+
+    if (transportCleanupRef.current) {
+      console.log("[collab] closing previous room", transportRoomRef.current);
+      transportCleanupRef.current();
+      transportCleanupRef.current = null;
+      transportRoomRef.current = null;
+    }
+
+    console.log("[collab] joining room", {
+      instance: collabInstanceRef.current,
+      activeProjectId,
+      currentView: state.currentView,
+      projectCanView: state.projectCanView,
+    });
 
     const { ydoc, awareness } = getOrInitDoc();
+
     const cleanup = initializeCollaborationTransport(
       ydoc,
       awareness,
@@ -440,22 +462,62 @@ function useCollaborationLogic({
       ablyKey,
     );
 
-    return () => {
-      if (typeof cleanup === "function") cleanup();
-    };
-  }, [state.currentView, activeProjectId, ablyKey, getOrInitDoc]);
+    transportCleanupRef.current = cleanup;
+    transportRoomRef.current = activeProjectId;
+  }, [
+    activeProjectId,
+    ablyKey,
+    state.currentView,
+    state.projectCanView,
+    getOrInitDoc,
+  ]);
 
   useEffect(() => {
+    return () => {
+      if (transportCleanupRef.current) {
+        console.log(
+          "[collab] unmount cleanup",
+          collabInstanceRef.current,
+          transportRoomRef.current,
+        );
+        transportCleanupRef.current();
+        transportCleanupRef.current = null;
+        transportRoomRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log("[autosave effect check]", {
+      activeProjectId,
+      currentView: state.currentView,
+      hasUnsavedChanges: state.hasUnsavedChanges,
+      isSaving: state.isSaving,
+      componentCount: state.components.length,
+    });
+
+    const isEditorRoute =
+      typeof window !== "undefined" &&
+      window.location.pathname.startsWith("/editor");
+
     if (
       !state.hasUnsavedChanges ||
-      state.currentView !== "editor" ||
+      (!isEditorRoute && state.currentView !== "editor") ||
       state.isSaving
     ) {
       return;
     }
 
+    console.log("[autosave effect armed]", {
+      activeProjectId,
+      hasUnsavedChanges: state.hasUnsavedChanges,
+    });
+
     const autoSaveTimer = setTimeout(async () => {
-      if (!state.currentProjectId) return;
+      if (!activeProjectId) {
+        console.warn("[autosave] skipped: no activeProjectId");
+        return;
+      }
 
       setState((prev) => ({ ...prev, isSaving: true }));
 
@@ -466,18 +528,34 @@ function useCollaborationLogic({
         const user_id = session?.user?.id;
         let persisted = false;
 
+        // FIX 4: Restore reading from yComponents.toArray() (v1 approach) rather
+        // than state.components (v2 stale closure). Using state.components inside
+        // a setTimeout captures the value at effect-creation time, which can be
+        // stale by the time the 2s timer fires — causing saves to write outdated
+        // component data and overwrite collaborator changes.
         const { yComponents } = getOrInitDoc();
         const currentComponents = yComponents.toArray();
 
+        console.log("[autosave] starting", {
+          activeProjectId,
+          componentCount: currentComponents.length,
+          hasUnsavedChanges: state.hasUnsavedChanges,
+        });
+
         if (user_id) {
           const { error: saveError } = await saveProject({
-            id: state.currentProjectId,
+            id: activeProjectId,
             name: state.projectName || "Untitled Project",
             user_id,
             project_layout: currentComponents,
             pages: state.pages,
             siteTitle: state.siteTitle,
             siteLogoUrl: state.siteLogoUrl,
+          });
+
+          console.log("[autosave] saveProject result", {
+            activeProjectId,
+            saveError,
           });
 
           persisted = !saveError;
@@ -492,8 +570,13 @@ function useCollaborationLogic({
         if (persisted) {
           const { error: syncAfterSaveError } = await syncProjectComponents(
             currentComponents,
-            state.currentProjectId,
+            activeProjectId,
           );
+
+          console.log("[autosave] sync after save result", {
+            activeProjectId,
+            syncAfterSaveError,
+          });
 
           if (syncAfterSaveError) {
             console.warn(
@@ -506,8 +589,13 @@ function useCollaborationLogic({
         if (!persisted) {
           const { error: syncError } = await syncProjectComponents(
             currentComponents,
-            state.currentProjectId,
+            activeProjectId,
           );
+
+          console.log("[autosave] fallback sync result", {
+            activeProjectId,
+            syncError,
+          });
 
           persisted = !syncError;
           if (syncError) {
@@ -532,11 +620,16 @@ function useCollaborationLogic({
       }
     }, 2000);
 
-    return () => clearTimeout(autoSaveTimer);
+    return () => {
+      console.log("[autosave timer cleared]", { activeProjectId });
+      clearTimeout(autoSaveTimer);
+    };
   }, [
-    state.components,
+    activeProjectId,
+    state.components, // FIX 5: Restore state.components in deps (removed in v2).
+    // Without it, the autosave effect won't re-arm when components change,
+    // meaning saves can be skipped entirely for component edits.
     state.currentView,
-    state.currentProjectId,
     state.projectName,
     state.pages,
     state.siteTitle,
@@ -557,6 +650,8 @@ function useCollaborationLogic({
     clearCanvas,
     remoteCursors,
     replaceProjectName,
+    setLocalCursor,
+    clearLocalCursor,
   };
 }
 

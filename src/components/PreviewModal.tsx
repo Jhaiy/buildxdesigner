@@ -89,12 +89,14 @@ interface PreviewModalProps {
     supabaseUrl: string;
     supabaseKey: string;
   };
+  currentUser?: any;
+  canvasBackgroundColor?: string;
 }
 
 type ViewMode = 'desktop' | 'tablet' | 'mobile';
 type FitMode = 'fit' | 'fill' | 'actual';
 
-export function PreviewModal({ components, onClose, activePageId = 'home', pages = [], userProjectConfig }: PreviewModalProps) {
+export function PreviewModal({ components, onClose, activePageId = 'home', pages = [], userProjectConfig, currentUser, canvasBackgroundColor = '#ffffff' }: PreviewModalProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('desktop');
   const [fitMode, setFitMode] = useState<FitMode>('fit');
   const [zoom, setZoom] = useState(1);
@@ -485,16 +487,29 @@ export function PreviewModal({ components, onClose, activePageId = 'home', pages
                   element = document.querySelector(`.preview-container ${valAsString}`);
                 }
 
-                if (element && ('value' in element)) {
-                  recordData[col] = element.value;
-                  console.log(`[Supabase Preview] Mapped "${col}" to input value: "${element.value}"`);
-                } else if (element) {
-                  recordData[col] = element.innerText;
-                  console.log(`[Supabase Preview] Mapped "${col}" to text content: "${element.innerText}"`);
-                } else {
-                  recordData[col] = valAsString;
-                  console.log(`[Supabase Preview] Mapped "${col}" to static/not-found value: "${valAsString}"`);
-                }
+                  if (element && ('value' in element)) {
+                    recordData[col] = element.value;
+                    console.log(`[Supabase Preview] Mapped "${col}" to input value: "${element.value}"`);
+                  } else if (element) {
+                    recordData[col] = element.innerText;
+                    console.log(`[Supabase Preview] Mapped "${col}" to text content: "${element.innerText}"`);
+                  } else {
+                    // Check if the static value is a JS expression like {currentUser.id}
+                    if (typeof valAsString === 'string' && valAsString.startsWith('{') && valAsString.endsWith('}')) {
+                      const expression = valAsString.substring(1, valAsString.length - 1);
+                      try {
+                        const evaluationFn = new Function('currentUser', 'window', `return ${expression}`);
+                        recordData[col] = evaluationFn(currentUser, window);
+                        console.log(`[Supabase Preview] Evaluated expression for column "${col}":`, recordData[col]);
+                      } catch (err) {
+                        console.error(`[Supabase Preview] Error evaluating expression "${expression}":`, err);
+                        recordData[col] = valAsString;
+                      }
+                    } else {
+                      recordData[col] = valAsString;
+                      console.log(`[Supabase Preview] Mapped "${col}" to static/not-found value: "${valAsString}"`);
+                    }
+                  }
               });
 
               let client = supabase;
@@ -609,6 +624,19 @@ export function PreviewModal({ components, onClose, activePageId = 'home', pages
                 }
               }
 
+              return true;
+            }
+
+            // Handle alert actions
+            if (action.handlerType as string === 'showAlert' && action.alertSelector) {
+              console.log('Executing showAlert action for:', action.alertSelector);
+              const elementId = action.alertSelector.startsWith('#') 
+                ? action.alertSelector.substring(1) 
+                : action.alertSelector;
+
+              window.dispatchEvent(new CustomEvent('showAlertRequested', {
+                detail: { elementId }
+              }));
               return true;
             }
 
@@ -978,7 +1006,7 @@ export function PreviewModal({ components, onClose, activePageId = 'home', pages
               height:   '100%',
               overflow: 'auto',
               position: 'relative',
-              backgroundColor: '#ffffff',
+              background: canvasBackgroundColor || '#ffffff',
             }}
           >
             {filteredComponents.length === 0 ? (
@@ -1028,18 +1056,6 @@ export function PreviewModal({ components, onClose, activePageId = 'home', pages
                           minWidth: '100px', // Fallback
                           minHeight: '40px' // Fallback
                         }}
-                        onClick={(e) => {
-                          // Don't interfere with table interactions
-                          if (component.type === 'table') {
-                            return;
-                          }
-
-                          // Handle button clicks directly
-                          if (component.type === 'button') {
-                            handleButtonClick(e, component);
-                          }
-                          e.stopPropagation();
-                        }}
                       >
                         <div
                           style={{
@@ -1056,22 +1072,9 @@ export function PreviewModal({ components, onClose, activePageId = 'home', pages
                             isPreview={true}
                             userProjectConfig={userProjectConfig}
                             navigate={handleNavigate}
+                            currentUser={currentUser}
                           />
                         </div>
-
-                        {/* Interactive element overlay to ensure clicks are captured in preview */}
-                        {(component.type === 'button') && (
-                          <div
-                            className="absolute inset-0 z-50 cursor-pointer"
-                            style={{ pointerEvents: 'auto', width: '100%', height: '100%' }}
-                            onClick={(e) => {
-                              console.log('Preview overlay clicked for component:', component.id);
-                              e.preventDefault();
-                              e.stopPropagation();
-                              handleButtonClick(e, component);
-                            }}
-                          />
-                        )}
                       </div>
                     );
                   })}

@@ -10,7 +10,6 @@ import {
   fetchProjectById,
   fetchProjectComponents,
   syncProjectComponents,
-  saveProjectMetadata,
 } from "../supabase/data/projectService";
 import useCollaboration from "../services/useCollaboration";
 import { getApiBaseUrl } from "../utils/apiConfig";
@@ -166,10 +165,11 @@ export function useEditorState() {
     updateComponent,
     deleteComponent,
     selectComponent,
-    reorderComponent: collaborationReorder,
     clearCanvas,
     remoteCursors,
     replaceProjectName,
+    setLocalCursor,
+    clearLocalCursor,
   } = useCollaboration({
     projectId: state.currentProjectId || "",
     setState,
@@ -190,39 +190,38 @@ export function useEditorState() {
 
   // ==================== AUTO-SAVE METADATA ====================
   // Save metadata like pages and project name whenever they change
-  useEffect(() => {
-    if (!state.currentProjectId || !isAuthenticated || !state.hasUnsavedChanges)
-      return;
+  // useEffect(() => {
+  //   if (!state.currentProjectId || !isAuthenticated || !state.hasUnsavedChanges)
+  //     return;
 
-    const timer = setTimeout(async () => {
-      try {
-        console.log("Autosaving project metadata (pages, etc)...");
-        await saveProjectMetadata({
-          id: state.currentProjectId!,
-          name: state.projectName,
-          user_id: currentUser?.id || "",
-          pages: state.pages,
-          siteTitle: state.siteTitle,
-          siteLogoUrl: state.siteLogoUrl,
-          // We also include components from state to keep the JSON column in sync
-          project_layout: state.components,
-        });
-      } catch (err) {
-        console.error("Failed to autosave metadata:", err);
-      }
-    }, 1000);
+  //   const timer = setTimeout(async () => {
+  //     try {
+  //       console.log("Autosaving project metadata (pages, etc)...");
+  //       await saveProjectMetadata({
+  //         id: state.currentProjectId!,
+  //         name: state.projectName,
+  //         pages: state.pages,
+  //         siteTitle: state.siteTitle,
+  //         siteLogoUrl: state.siteLogoUrl,
+  //         // We also include components from state to keep the JSON column in sync
+  //         project_layout: state.components,
+  //       });
+  //     } catch (err) {
+  //       console.error("Failed to autosave metadata:", err);
+  //     }
+  //   }, 1000);
 
-    return () => clearTimeout(timer);
-  }, [
-    state.pages,
-    state.projectName,
-    state.siteTitle,
-    state.siteLogoUrl,
-    state.currentProjectId,
-    isAuthenticated,
-    currentUser?.id,
-    state.components,
-  ]);
+  //   return () => clearTimeout(timer);
+  // }, [
+  //   state.pages,
+  //   state.projectName,
+  //   state.siteTitle,
+  //   state.siteLogoUrl,
+  //   state.currentProjectId,
+  //   isAuthenticated,
+  //   currentUser?.id,
+  //   state.components,
+  // ]);
 
   // ==================== AUTH ====================
 
@@ -302,15 +301,6 @@ export function useEditorState() {
 
       setIsAuthenticated(loggedIn);
 
-      // Check onboarding status
-      if (loggedIn && session?.user) {
-        const onboardingCompleted =
-          session.user.user_metadata?.onboarding_completed;
-        if (!onboardingCompleted) {
-          setShowOnboarding(true);
-        }
-      }
-
       setAuthLoading(false);
 
       const savedView = localStorage.getItem("fulldev-ai-current-view");
@@ -343,6 +333,56 @@ export function useEditorState() {
 
     checkSession();
   }, []);
+
+  useEffect(() => {
+    const syncViewFromPath = () => {
+      const path = window.location.pathname;
+
+      setState((prev) => {
+        let nextView = prev.currentView;
+
+        if (path.startsWith("/editor")) {
+          nextView = "editor";
+        } else if (path.startsWith("/dashboard")) {
+          nextView = "dashboard";
+        } else if (path.startsWith("/admin-login")) {
+          nextView = "admin-login";
+        } else if (path.startsWith("/admin")) {
+          nextView = "admin";
+        } else {
+          nextView = "landing";
+        }
+
+        if (prev.currentView === nextView && prev.currentPage === nextView) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          currentView: nextView,
+          currentPage: nextView,
+        };
+      });
+    };
+
+    syncViewFromPath();
+
+    window.addEventListener("popstate", syncViewFromPath);
+    window.addEventListener("hashchange", syncViewFromPath);
+
+    return () => {
+      window.removeEventListener("popstate", syncViewFromPath);
+      window.removeEventListener("hashchange", syncViewFromPath);
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log("[view state]", {
+      pathname: window.location.pathname,
+      currentView: state.currentView,
+      currentPage: state.currentPage,
+    });
+  }, [state.currentView, state.currentPage]);
 
   // Fetch current user info
   useEffect(() => {
@@ -1405,6 +1445,8 @@ export function useEditorState() {
     moveLayer: handleMoveLayer,
     clearCanvas: clearCanvasGuarded,
     replaceComponents: replaceComponentsGuarded,
+    setLocalCursor,
+    clearLocalCursor,
 
     // Toggles
     togglePreview,

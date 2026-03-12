@@ -4,8 +4,7 @@ import React, { useState, useRef, useEffect } from "react"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
-import { Badge } from "./ui/badge"
-import { Send, Bot, User, Sparkles, MessageSquare, Star, X, ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react"
+import { Send, User, MessageSquare, Star, X, ThumbsUp, ThumbsDown, Copy, Check } from "lucide-react"
 
 interface Message {
   id: string
@@ -13,6 +12,36 @@ interface Message {
   content: string
   timestamp: Date
   feedback?: "up" | "down"
+  animate?: boolean 
+}
+
+const TypewriterText = ({ text, animate }: { text: string, animate?: boolean }) => {
+  const [displayedText, setDisplayedText] = useState(animate ? "" : text)
+
+  useEffect(() => {
+    if (!animate) {
+      setDisplayedText(text)
+      return
+    }
+    
+    let currentText = ""
+    let i = 0
+    setDisplayedText("") 
+    
+    const timer = setInterval(() => {
+      if (i < text.length) {
+        currentText += text.charAt(i) 
+        setDisplayedText(currentText)
+        i++
+      } else {
+        clearInterval(timer)
+      }
+    }, 3) 
+
+    return () => clearInterval(timer)
+  }, [text, animate])
+
+  return <div className="whitespace-pre-wrap leading-relaxed">{displayedText}</div>
 }
 
 export function AIAssistant({ selectedComponentType, projectId }: { selectedComponentType?: string, projectId?: string }) {
@@ -28,6 +57,9 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
   const [rating, setRating] = useState<number>(0)
   const [hoveredStar, setHoveredStar] = useState<number>(0)
   const [showRatingCongrats, setShowRatingCongrats] = useState(false)
+  
+  const [thinkingIndex, setThinkingIndex] = useState(0)
+  const thinkingPhrases = ["AI is thinking...", "Reading BuildX docs...", "Analyzing context...", "Preparing answer..."]
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -37,12 +69,33 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
   const isOverLimit = currentWordCount > MAX_WORDS
 
   useEffect(() => {
+    const pingServer = () => {
+      fetch("https://pyqt-buildx-aiinterface.onrender.com/ask", { method: "OPTIONS" }).catch(() => null)
+    }
+    const pingInterval = setInterval(pingServer, 840000)
+    return () => clearInterval(pingInterval)
+  }, [])
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+    if (isLoading) {
+      interval = setInterval(() => {
+        setThinkingIndex((prev) => (prev + 1) % thinkingPhrases.length)
+      }, 5000)
+    } else {
+      setThinkingIndex(0)
+    }
+    return () => clearInterval(interval)
+  }, [isLoading])
+
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const savedChats = sessionStorage.getItem(storageKey)
       if (savedChats) {
         setMessages(JSON.parse(savedChats).map((msg: any) => ({
           ...msg,
-          timestamp: new Date(msg.timestamp)
+          timestamp: new Date(msg.timestamp),
+          animate: false 
         })))
       } else {
         setMessages([{
@@ -50,6 +103,7 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
           type: "assistant",
           content: `Hello! I'm your BuildX AI Mentor. How can I help you design today?`,
           timestamp: new Date(),
+          animate: true 
         }])
       }
       setRating(0)
@@ -67,7 +121,7 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
 
   const generateResponse = async (userMessage: string): Promise<string> => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/ask", {
+      const response = await fetch("https://pyqt-buildx-aiinterface.onrender.com/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: userMessage }),
@@ -88,7 +142,7 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
     setIsLoading(true)
     try {
       const response = await generateResponse(userMsg.content)
-      setMessages(prev => [...prev, { id: (Date.now()+1).toString(), type: "assistant", content: response, timestamp: new Date() }])
+      setMessages(prev => [...prev, { id: (Date.now()+1).toString(), type: "assistant", content: response, timestamp: new Date(), animate: true }])
     } finally {
       setIsLoading(false)
     }
@@ -118,14 +172,13 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
   return (
     <Card className="relative overflow-hidden flex flex-col h-full border-t border-l-0 border-r-0 border-b-0 rounded-none bg-background text-foreground shadow-none">
       
-      
       {showRatingPopup && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
           <div className="bg-card border shadow-xl rounded-3xl p-6 w-full max-w-[260px] text-center relative animate-in fade-in zoom-in duration-200">
             <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => setShowRatingPopup(false)}>
               <X className="w-4 h-4" />
             </Button>
-            <div className="w-12 h-12 bg-gradient-to-br from-violet-600 to-fuchsia-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-md">
+            <div className="w-12 h-12 bg-violet-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-md">
               <Star className="w-6 h-6 text-white" />
             </div>
             <h3 className="font-bold text-foreground mb-1">Rate AI Mentor</h3>
@@ -135,7 +188,7 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
                 <Star
                   key={star}
                   className={`w-7 h-7 cursor-pointer transition-all hover:scale-110 ${
-                    (hoveredStar || rating) >= star ? "fill-fuchsia-500 text-fuchsia-500" : "text-muted-foreground/30"
+                    (hoveredStar || rating) >= star ? "fill-violet-500 text-violet-500" : "text-muted-foreground/30"
                   }`}
                   onMouseEnter={() => setHoveredStar(star)}
                   onMouseLeave={() => setHoveredStar(0)}
@@ -143,111 +196,118 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
                 />
               ))}
             </div>
-            {showRatingCongrats && <p className="text-xs text-fuchsia-500 font-medium animate-pulse mt-3">Feedback saved! Thanks!</p>}
+            {showRatingCongrats && <p className="text-xs text-violet-500 font-medium animate-pulse mt-3">Feedback saved! Thanks!</p>}
           </div>
         </div>
       )}
 
-      
       <CardHeader className="pb-3 pt-4 px-5 border-b bg-card relative z-20 shadow-sm overflow-hidden">
-        <CardTitle className="text-sm flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <CardTitle className="text-sm flex items-center justify-between w-full">
+          
+          <div className="flex items-center gap-3 ml-4">
             <div className="relative">
-              <div className="absolute -inset-1 bg-gradient-to-r from-violet-600 to-fuchsia-500 rounded-lg blur opacity-40 animate-pulse"></div>
-              <div className="relative w-8 h-8 bg-gradient-to-br from-violet-600 to-fuchsia-500 rounded-lg flex items-center justify-center shadow-sm">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
+              <div className="absolute -inset-1 bg-violet-600 rounded-lg blur opacity-40 animate-pulse"></div>
+              <img src="https://media.giphy.com/media/shT902UlQAd9l7lukP/giphy.gif" alt="AI Mentor Profile" className="relative w-8 h-8 rounded-lg object-cover shadow-sm" />
             </div>
             
-            <span className="font-extrabold tracking-wide text-foreground">
+            <span className="text-lg font-bold text-violet-700">
               BuildX AI Mentor
             </span>
           </div>
+          
           {messages.length > 1 && (
-            <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase tracking-widest font-bold text-fuchsia-600 dark:text-fuchsia-400 border-fuchsia-200 dark:border-fuchsia-900/50 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-900/30 rounded-full shadow-sm transition-all" onClick={() => setShowRatingPopup(true)}>
+            <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase tracking-widest font-bold text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-900/50 hover:bg-violet-50 dark:hover:bg-violet-900/30 rounded-full shadow-sm transition-all" onClick={() => setShowRatingPopup(true)}>
               <Star className="w-3 h-3 mr-1" /> Rate
             </Button>
           )}
         </CardTitle>
       </CardHeader>
 
-      
       <CardContent className="p-0 flex flex-col flex-1 min-h-0 bg-background relative">
-        
-        
         <div className="absolute inset-0 z-0 opacity-20 pointer-events-none" style={{
           backgroundImage: 'radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)',
           backgroundSize: '24px 24px'
         }}></div>
 
-        <div className="flex-1 overflow-y-auto px-5 pt-6 relative z-10" style={{ scrollbarWidth: "thin" }}>
-          <div className="space-y-6 pb-6">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 ${message.type === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                
-                
-                <div className="flex-shrink-0 mt-auto mb-1">
-                  {message.type === "assistant" ? (
-                    <div className="w-8 h-8 bg-gradient-to-br from-violet-600 to-fuchsia-500 rounded-full flex items-center justify-center shadow-md border-0">
-                      <Bot className="w-4 h-4 text-white" />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center shadow-sm border border-border">
-                      <User className="w-4 h-4 text-foreground" />
-                    </div>
-                  )}
-                </div>
-
-                <div className={`max-w-[85%] flex flex-col ${message.type === "user" ? "items-end" : "items-start"}`}>
-                  
-                  
-                  <div className={`px-4 py-3 text-sm shadow-sm rounded-2xl overflow-hidden ${
-                    message.type === "assistant" 
-                      ? "bg-muted text-foreground border border-border rounded-bl-sm" 
-                      : "bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white rounded-br-sm border-0 shadow-[0_4px_15px_rgba(147,51,234,0.2)] font-medium"
-                  }`}>
-                    <div className="whitespace-pre-wrap leading-relaxed">
-                      {message.content}
-                    </div>
-                  </div>
-                  
-                  
-                  <div className={`flex items-center gap-3 mt-1.5 px-1 ${message.type === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                    <span className="text-[10px] text-muted-foreground font-medium">
-                      {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </span>
+        <div className="flex-1 overflow-y-auto pt-6 relative z-10" style={{ scrollbarWidth: "thin" }}>
+          <div className="space-y-6 pb-6 px-6">
+            {messages.map((message) => {
+              const isUser = message.type === "user";
+              return (
+                <div key={message.id} className={`flex w-full animate-in fade-in slide-in-from-bottom-2 duration-300 ${isUser ? "justify-end" : "justify-start"}`}>
+                  <div className="flex gap-3 max-w-[85%]">
                     
-                    {message.type === "assistant" && (
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => copyToClipboard(message.content, message.id)} className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground">
-                          {copiedId === message.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                        </button>
-                        <button onClick={() => rateMessage(message.id, "up")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "up" ? "text-fuchsia-500" : "text-muted-foreground hover:text-fuchsia-500"}`}>
-                          <ThumbsUp className={`w-3 h-3 ${message.feedback === "up" ? "fill-fuchsia-500" : ""}`} />
-                        </button>
-                        <button onClick={() => rateMessage(message.id, "down")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "down" ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}>
-                          <ThumbsDown className={`w-3 h-3 ${message.feedback === "down" ? "fill-red-500" : ""}`} />
-                        </button>
+                    {!isUser && (
+                      <div className="flex-shrink-0 mt-auto mb-1">
+                        <img src="https://media.giphy.com/media/0JD7et5Wyv8m0mah8z/giphy.gif" alt="AI Avatar" className="w-8 h-8 rounded-full object-cover shadow-md border-0" />
                       </div>
                     )}
+
+                    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+                      <div className={`px-4 py-3 text-sm shadow-sm rounded-2xl overflow-hidden ${
+                        isUser 
+                          ? "bg-muted text-foreground border border-border rounded-br-sm" 
+                          : "bg-violet-600 text-white rounded-bl-sm border-0 shadow-md font-medium"
+                      }`}>
+                        {isUser ? (
+                          <div className="whitespace-pre-wrap leading-relaxed">
+                            {message.content}
+                          </div>
+                        ) : (
+                          <TypewriterText text={message.content} animate={message.animate} />
+                        )}
+                      </div>
+                      
+                      <div className={`flex items-center gap-3 mt-1.5 px-1 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+                        <span className="text-[10px] text-muted-foreground font-medium">
+                          {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        
+                        {!isUser && (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => copyToClipboard(message.content, message.id)} className="p-1.5 hover:bg-muted rounded-md transition-colors text-muted-foreground hover:text-foreground">
+                              {copiedId === message.id ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                            <button onClick={() => rateMessage(message.id, "up")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "up" ? "text-violet-500" : "text-muted-foreground hover:text-violet-500"}`}>
+                              <ThumbsUp className={`w-3 h-3 ${message.feedback === "up" ? "fill-violet-500" : ""}`} />
+                            </button>
+                            <button onClick={() => rateMessage(message.id, "down")} className={`p-1.5 hover:bg-muted rounded-md transition-colors ${message.feedback === "down" ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}>
+                              <ThumbsDown className={`w-3 h-3 ${message.feedback === "down" ? "fill-red-500" : ""}`} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {isUser && (
+                      <div className="flex-shrink-0 mt-auto mb-1">
+                        <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center shadow-sm border border-border">
+                          <User className="w-4 h-4 text-foreground" />
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 </div>
-
-              </div>
-            ))}
-            
+              )
+            })}
             
             {isLoading && (
-              <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="flex-shrink-0 mt-auto mb-1">
-                  <div className="w-8 h-8 bg-gradient-to-br from-violet-600 to-fuchsia-500 rounded-full flex items-center justify-center shadow-md">
-                    <Bot className="w-4 h-4 text-white" />
+              <div className="flex w-full justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex gap-3 max-w-[85%]">
+                  <div className="flex-shrink-0 mt-auto mb-1">
+                    <img src="https://media.giphy.com/media/0JD7et5Wyv8m0mah8z/giphy.gif" alt="AI Avatar" className="w-8 h-8 rounded-full object-cover shadow-md border-0" />
                   </div>
-                </div>
-                <div className="bg-muted border border-border rounded-2xl rounded-bl-sm px-4 py-4 shadow-sm flex items-center gap-1.5 w-fit h-[40px] mt-auto mb-5">
-                  <div className="w-2 h-2 bg-fuchsia-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
-                  <div className="w-2 h-2 bg-fuchsia-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
-                  <div className="w-2 h-2 bg-fuchsia-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                  <div className="flex flex-col items-start mb-5">
+                    <div className="px-5 py-4 text-sm shadow-sm rounded-2xl overflow-hidden bg-violet-600 text-white rounded-tl-sm border-0 shadow-md font-medium flex items-center gap-2 w-[245px]">
+                      <span className="font-bold">{thinkingPhrases[thinkingIndex]}</span>
+                      <div className="flex gap-1 items-center mt-1 ml-auto">
+                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
+                        <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -255,7 +315,6 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
           </div>
         </div>
 
-        
         <div className="p-4 bg-card border-t z-20 relative">
           <div className="flex justify-between items-center mb-2 px-1">
             <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold flex items-center gap-1">
@@ -272,11 +331,11 @@ export function AIAssistant({ selectedComponentType, projectId }: { selectedComp
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendMessage()}
-              placeholder="Ask for design help..."
-              className={`rounded-xl bg-background border-border focus-visible:ring-fuchsia-500 ${isOverLimit ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+              placeholder="Ask AI Mentor for help..."
+              className={`rounded-xl bg-background border-border focus-visible:ring-violet-500 ${isOverLimit ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
               disabled={isLoading}
             />
-            <Button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading || isOverLimit} size="icon" className="rounded-xl shadow-sm bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:opacity-90 text-white transition-all disabled:opacity-50 border-0">
+            <Button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading || isOverLimit} size="icon" className="rounded-xl shadow-sm bg-violet-600 hover:bg-violet-700 text-white transition-all disabled:opacity-50 border-0">
               <Send className="w-4 h-4 ml-0.5" />
             </Button>
           </div>

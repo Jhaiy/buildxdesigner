@@ -25,6 +25,7 @@ import {
   useNavigate,
   matchPath,
 } from "react-router-dom";
+import { isOnboardingRequired } from "./utils/onboarding";
 
 // Views
 import { LandingPage } from "./components/LandingPage";
@@ -73,11 +74,36 @@ const getPathFromState = (view: string, projectId: string | null) => {
   }
 };
 
+const ONBOARDING_SESSION_INTENT_KEY = "buildxdesigner:auth-intent";
+const ONBOARDING_COMPLETED_PREFIX = "buildxdesigner:onboarding-completed:";
+
+const getOnboardingCompletedKey = (userId: string) =>
+  `${ONBOARDING_COMPLETED_PREFIX}${userId}`;
+
+const isLikelyNewUser = (session?: {
+  user?: { created_at?: string; last_sign_in_at?: string };
+}) => {
+  const createdAt = session?.user?.created_at;
+  const lastSignInAt = session?.user?.last_sign_in_at;
+
+  if (!createdAt || !lastSignInAt) return false;
+
+  const createdTime = new Date(createdAt).getTime();
+  const lastSignInTime = new Date(lastSignInAt).getTime();
+
+  if (Number.isNaN(createdTime) || Number.isNaN(lastSignInTime)) {
+    return false;
+  }
+
+  return Math.abs(lastSignInTime - createdTime) < 60_000;
+};
+
 function AppRoutes({ editor }: { editor: EditorController }) {
   const location = useLocation();
   const navigate = useNavigate();
   const isSyncingFromPath = useRef(false);
   const isInitialMount = useRef(true);
+  const onboardingCheckUserIdRef = useRef<string | null>(null);
   const [showEditorTour, setShowEditorTour] = useState(false);
   const [showGettingStartedModal, setShowGettingStartedModal] = useState(false);
   const [showPublishingBasicsTour, setShowPublishingBasicsTour] = useState(false);
@@ -112,18 +138,117 @@ function AppRoutes({ editor }: { editor: EditorController }) {
     setShowOnboarding,
   } = editor;
 
-  const handleAuthenticatedSession = (session?: {
-    user?: { user_metadata?: Record<string, unknown> };
+  const handleAuthenticatedSession = async (session?: {
+    user?: {
+      user_metadata?: Record<string, unknown>;
+      id?: string;
+      created_at?: string;
+      last_sign_in_at?: string;
+    };
   }) => {
-    const onboardingCompleted =
-      session?.user?.user_metadata?.onboarding_completed === true;
+    const userId = session?.user?.id;
 
-    if (!onboardingCompleted) {
-      setShowOnboarding(true);
+    if (!userId) {
+      goToLanding();
       return;
     }
 
-    enterDashboard();
+    const authIntent = sessionStorage.getItem(ONBOARDING_SESSION_INTENT_KEY);
+    const onboardingEligible =
+      authIntent === "signup" || isLikelyNewUser(session);
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const response = await fetch(`${apiUrl}/api/onboarding-data/${userId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (onboardingEligible) {
+          setShowOnboarding(true);
+          return;
+        }
+
+        enterDashboard();
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        setShowOnboarding(true);
+        return;
+      }
+
+      enterDashboard();
+
+      const hasValue = (value: unknown) =>
+        value !== null && value !== undefined && String(value).trim() !== "";
+
+      const hasAnswerFields = (obj: unknown) => {
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+        const record = obj as Record<string, unknown>;
+        return [
+          record.primary_role,
+          record.workplace_type,
+          record.experience,
+          record.experience_level,
+          record.main_goal,
+          record.team_size,
+        ].some(hasValue);
+      };
+
+      const topLevelRecord = data as Record<string, unknown>;
+      const onboardingPayload =
+        topLevelRecord.onboarding_data ??
+        topLevelRecord.onboardingData ??
+        topLevelRecord.data ??
+        topLevelRecord.result;
+
+      const payloadRecord =
+        Array.isArray(onboardingPayload) && onboardingPayload.length > 0
+          ? onboardingPayload[0]
+          : onboardingPayload;
+
+      const hasBooleanSignal =
+        topLevelRecord.exists === true ||
+        topLevelRecord.found === true ||
+        topLevelRecord.completed === true ||
+        topLevelRecord.hasOnboardingData === true;
+
+      const hasOnboardingData =
+        hasBooleanSignal ||
+        onboardingPayload === true ||
+        (Array.isArray(onboardingPayload) && onboardingPayload.length > 0) ||
+        hasAnswerFields(payloadRecord) ||
+        hasAnswerFields(topLevelRecord);
+
+      if (hasOnboardingData) {
+        localStorage.setItem(getOnboardingCompletedKey(userId), "true");
+        enterDashboard();
+        return;
+      }
+
+      if (onboardingEligible) {
+        setShowOnboarding(true);
+        return;
+      }
+
+      enterDashboard();
+    } catch (error) {
+      console.error("Error checking onboarding status:", error);
+      if (onboardingEligible) {
+        setShowOnboarding(true);
+        return;
+      }
+
+      enterDashboard();
+    } finally {
+      sessionStorage.removeItem(ONBOARDING_SESSION_INTENT_KEY);
+    }
   };
 
   const openProjectAndRoute = (
@@ -151,6 +276,19 @@ function AppRoutes({ editor }: { editor: EditorController }) {
       navigate("/dashboard", { replace: true });
     }
   };
+
+  useEffect(() => {
+    if (authLoading) return;
+    const userId = currentUser?.id;
+    if (!userId) return;
+    if (onboardingCheckUserIdRef.current === userId) {
+      return;
+    }
+
+    onboardingCheckUserIdRef.current = userId;
+
+    void handleAuthenticatedSession({ user: { id: userId } });
+  }, [authLoading, currentUser?.id]);
 
   const routeMatch =
     matchPath("/editor/:projectId/*", location.pathname) ||
@@ -331,6 +469,12 @@ function AppRoutes({ editor }: { editor: EditorController }) {
     return (
       <OnboardingPage
         onComplete={() => {
+          if (currentUser?.id) {
+            localStorage.setItem(
+              getOnboardingCompletedKey(currentUser.id),
+              "true",
+            );
+          }
           setShowOnboarding(false);
           enterDashboard();
         }}
