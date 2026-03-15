@@ -63,10 +63,12 @@ function getInitialTheme(): "light" | "dark" | "system" {
 function getInitialUserProjectConfig() {
   const url = localStorage.getItem("target_supabase_url");
   const key = localStorage.getItem("target_supabase_key");
-  if (url && key) {
-    return { supabaseUrl: url, supabaseKey: key };
-  }
-  return { supabaseUrl: "", supabaseKey: "" };
+  const resendKey = localStorage.getItem("target_resend_api_key");
+  return {
+    supabaseUrl: url || "",
+    supabaseKey: key || "",
+    resendApiKey: resendKey || "",
+  };
 }
 
 function getInitialView(): EditorState["currentView"] {
@@ -374,6 +376,52 @@ export function useEditorState() {
       window.removeEventListener("popstate", syncViewFromPath);
       window.removeEventListener("hashchange", syncViewFromPath);
     };
+  }, []);
+
+  // Listen for resend API key changes from Account Settings
+  useEffect(() => {
+    const handleConfigUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.resendApiKey !== undefined) {
+        setState((prev) => ({
+          ...prev,
+          userProjectConfig: {
+            ...prev.userProjectConfig,
+            resendApiKey: detail.resendApiKey,
+          },
+        }));
+      }
+    };
+    window.addEventListener("userProjectConfigUpdated", handleConfigUpdate);
+    return () => {
+      window.removeEventListener("userProjectConfigUpdated", handleConfigUpdate);
+    };
+  }, []);
+
+  // Sync resend API key from Supabase user metadata on load
+  useEffect(() => {
+    const syncResendKeyFromProfile = async () => {
+      try {
+        const { data: { session } } = await getSupabaseSession();
+        if (session?.user) {
+          const metadata = session.user.user_metadata as Record<string, unknown>;
+          const resendKey = (metadata?.resend_api_key as string) || "";
+          if (resendKey) {
+            localStorage.setItem("target_resend_api_key", resendKey);
+            setState((prev) => ({
+              ...prev,
+              userProjectConfig: {
+                ...prev.userProjectConfig,
+                resendApiKey: resendKey,
+              },
+            }));
+          }
+        }
+      } catch (err) {
+        // Non-critical — silently ignore
+      }
+    };
+    syncResendKeyFromProfile();
   }, []);
 
   useEffect(() => {
@@ -854,12 +902,23 @@ export function useEditorState() {
     localStorage.setItem("fulldev-ai-project-name", name);
   };
 
-  const updateUserProjectConfig = (url: string, key: string) => {
-    const config = { supabaseUrl: url, supabaseKey: key };
-    localStorage.setItem(
-      "fulldev-ai-user-project-config",
-      JSON.stringify(config),
-    );
+  const updateUserProjectConfig = (
+    url: string,
+    key: string,
+    resendKey?: string,
+  ) => {
+    const config = {
+      supabaseUrl: url,
+      supabaseKey: key,
+      resendApiKey: resendKey,
+    };
+    localStorage.setItem("target_supabase_url", url);
+    localStorage.setItem("target_supabase_key", key);
+    if (resendKey) {
+      localStorage.setItem("target_resend_api_key", resendKey);
+    } else {
+      localStorage.removeItem("target_resend_api_key");
+    }
     setState((prev) => ({ ...prev, userProjectConfig: config }));
   };
 

@@ -30,6 +30,7 @@ interface CanvasProps {
   userProjectConfig?: {
     supabaseUrl: string;
     supabaseKey: string;
+    resendApiKey?: string;
   };
   readOnly?: boolean;
   activePageId?: string;

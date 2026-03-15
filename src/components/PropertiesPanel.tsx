@@ -28,6 +28,9 @@ import {
   MousePointer,
   RefreshCw,
   HelpCircle,
+  Eye,
+  EyeOff,
+  Sparkles
 } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@supabase/supabase-js"
@@ -91,6 +94,7 @@ interface PropertiesPanelProps {
   pages?: { id: string; name: string; path?: string }[]
   activePageId?: string
   userProjectConfig?: any
+  onUpdateUserProjectConfig?: (url: string, key: string, resendKey?: string) => void
 }
 // ─── Gradient-aware ColorPicker (module-level to prevent state reset) ────────
 const SOLID_PRESETS = [
@@ -257,9 +261,11 @@ export function PropertiesPanel({
   pages,
   activePageId,
   userProjectConfig,
+  onUpdateUserProjectConfig,
 }: PropertiesPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState("content")
+  const [showResendApiKey, setShowResendApiKey] = useState(false)
   const [isPickingElement, setIsPickingElement] = useState<string | null>(null) // actionId or null
   const [pickingMode, setPickingMode] = useState<{ type: "selector" | "column"; column?: string } | null>(null)
   const [boxShadowValues, setBoxShadowValues] = useState({
@@ -2330,6 +2336,62 @@ export function PropertiesPanel({
                 A default "Log out" button is always included at the bottom of the dropdown. It uses your project's Supabase configuration to sign users out.
               </p>
             </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <Label className="text-xs font-semibold flex items-center gap-2">
+                <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+                Integrations
+              </Label>
+              
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="resend-api-key" className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                    Resend API Key
+                  </Label>
+                  {userProjectConfig?.resendApiKey && !userProjectConfig.resendApiKey.startsWith('re_') && (
+                    <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-600 border-amber-200">
+                      Invalid Format
+                    </Badge>
+                  )}
+                </div>
+                <div className="relative">
+                  <Input
+                    id="resend-api-key"
+                    type={showResendApiKey ? "text" : "password"}
+                    value={userProjectConfig?.resendApiKey || ""}
+                    onChange={(e) => {
+                      onUpdateUserProjectConfig?.(
+                        userProjectConfig?.supabaseUrl || "",
+                        userProjectConfig?.supabaseKey || "",
+                        e.target.value
+                      );
+                    }}
+                    placeholder="re_123456789..."
+                    className={`h-8 text-xs mt-1 bg-white pr-8 ${
+                      userProjectConfig?.resendApiKey && !userProjectConfig.resendApiKey.startsWith('re_') 
+                        ? "border-amber-400 focus-visible:ring-amber-400" 
+                        : ""
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResendApiKey(!showResendApiKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showResendApiKey ? (
+                      <EyeOff className="h-3 w-3" />
+                    ) : (
+                      <Eye className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Required for form submissions. Must start with <code>re_</code>.
+                </p>
+              </div>
+            </div>
           </div>
         )
 
@@ -3693,6 +3755,22 @@ const selectValue = (!currentUrl || currentUrl === "#" || !isKnownUrl) ? "none" 
                 placeholder="Submit"
                 className="h-8 text-xs mt-1"
               />
+            </div>
+            <div>
+              <Label htmlFor="recipientEmail" className="text-xs">
+                Recipient Email
+              </Label>
+              <Input
+                id="recipientEmail"
+                type="email"
+                value={props.recipientEmail || ""}
+                onChange={(e) => updateProps("recipientEmail", e.target.value)}
+                placeholder="hello@example.com"
+                className="h-8 text-xs mt-1"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                The email address that will receive form submissions.
+              </p>
             </div>
 
             <Separator />

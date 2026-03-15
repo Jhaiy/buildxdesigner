@@ -332,6 +332,7 @@ export function BlocksPalette({ onSelectBlock, searchTerm, onSearchChange }: Blo
             props: { 
             title: 'Get In Touch',
             submitText: 'Submit',
+            recipientEmail: '',
             fields: [
               { id: 'field-1', label: 'Name', placeholder: 'Enter your name', type: 'text', required: true },
               { id: 'field-2', label: 'Email', placeholder: 'Enter your email', type: 'email', required: true },
