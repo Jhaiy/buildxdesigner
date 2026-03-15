@@ -21,6 +21,7 @@ import 'datatables.net-dt/css/dataTables.dataTables.css';
 import 'datatables.net-responsive-dt';
 import 'datatables.net-responsive-dt/css/responsive.dataTables.css';
 import { toast } from 'sonner';
+import { validateForm, sendFormEmail } from "../utils/formEmailUtils";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ import {
 } from "./ui/alert-dialog";
 import { Label } from "./ui/label";
 import { formatUrl } from '../utils/urlUtils';
+import { BACKEND_URL } from '../utils/backendConfig';
 import {
   Select,
   SelectContent,
@@ -188,6 +190,7 @@ interface RenderableComponentProps {
   userProjectConfig?: {
     supabaseUrl: string;
     supabaseKey: string;
+    resendApiKey?: string;
   };
   currentUser?: any;
   activePageId?: string;
@@ -243,6 +246,8 @@ export function RenderableComponent({
   const dataTableInstance = React.useRef<any>(null);
   
   const [checkboxChecked, setCheckboxChecked] = React.useState(props.checked || false);
+  const [formState, setFormState] = React.useState<Record<string, string>>({});
+  const [isSubmittingForm, setIsSubmittingForm] = React.useState(false);
 
   React.useEffect(() => {
     if (type === 'checkbox') {
@@ -1054,8 +1059,52 @@ export function RenderableComponent({
       rootActions.forEach((rootAction) => {
         executeSingleAction(rootAction);
       });
-    } else {
-      console.log('Not in preview mode, skipping action execution');
+    }
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isPreview) return;
+
+    const recipientEmail = props.recipientEmail;
+    const apiKey = userProjectConfig?.resendApiKey;
+
+    if (!recipientEmail) {
+      toast.error("Form missing recipient email configuration.");
+      return;
+    }
+
+    if (!apiKey && !projectId) {
+      toast.error("Resend API key missing in integration settings.");
+      return;
+    }
+
+    // Use utility for validation
+    const validation = validateForm(props.fields || [], formState);
+    if (!validation.isValid) {
+      toast.error(validation.error);
+      return;
+    }
+
+    setIsSubmittingForm(true);
+    
+    try {
+      await sendFormEmail({
+        apiKey,
+        projectId,
+        to: recipientEmail,
+        subject: props.title || 'New Form Submission',
+        formState,
+        from: 'Contact Form <onboarding@resend.dev>'
+      });
+
+      toast.success("Message sent successfully!");
+      setFormState({});
+    } catch (err: any) {
+      console.error("Form submission error:", err);
+      toast.error(err.message || "Failed to send message. Please try again.");
+    } finally {
+      setIsSubmittingForm(false);
     }
   };
 
@@ -2753,6 +2802,7 @@ export function RenderableComponent({
             initialWidth={formWidth}
             initialHeight={formHeight}
             className="group"
+            disabled={isPreview}
             onResizeStart={onResizeStart}
             onResizeEnd={onResizeEnd}
           >
@@ -2763,13 +2813,17 @@ export function RenderableComponent({
             >
               <CardHeader>
                 <CardTitle>
-                  <EditableText
-                    text={props.title}
-                    onTextChange={(newText) => onUpdate({ props: { ...props, title: newText } })}
-                    element="span"
-                    placeholder="Contact Form"
-                    isSelected={isSelected}
-                  />
+                  {isPreview ? (
+                    <span>{props.title || 'Contact Form'}</span>
+                  ) : (
+                    <EditableText
+                      text={props.title}
+                      onTextChange={(newText) => onUpdate({ props: { ...props, title: newText } })}
+                      element="span"
+                      placeholder="Contact Form"
+                      isSelected={isSelected}
+                    />
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -2780,14 +2834,18 @@ export function RenderableComponent({
                       {field.type === 'textarea' ? (
                         <Textarea
                           placeholder={field.placeholder}
-                          onClick={(e) => isSelected && e.stopPropagation()}
+                          value={formState[field.label || field.id] || ''}
+                          onChange={(e) => setFormState({ ...formState, [field.label || field.id]: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
                           required={field.required}
                         />
                       ) : (
                         <Input
                           type={field.type || 'text'}
                           placeholder={field.placeholder}
-                          onClick={(e) => isSelected && e.stopPropagation()}
+                          value={formState[field.label || field.id] || ''}
+                          onChange={(e) => setFormState({ ...formState, [field.label || field.id]: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
                           required={field.required}
                         />
                       )}
@@ -2798,32 +2856,56 @@ export function RenderableComponent({
                     <div className="relative">
                       <Input
                         placeholder={props.namePlaceholder || "Name"}
-                        onClick={(e) => isSelected && e.stopPropagation()}
+                        value={formState['Name'] || ''}
+                        onChange={(e) => setFormState({ ...formState, 'Name': e.target.value })}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </div>
                     <div className="relative">
                       <Input
                         type="email"
                         placeholder={props.emailPlaceholder || "Email"}
-                        onClick={(e) => isSelected && e.stopPropagation()}
+                        value={formState['Email'] || ''}
+                        onChange={(e) => setFormState({ ...formState, 'Email': e.target.value })}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </div>
                     <div className="relative">
                       <Textarea
                         placeholder={props.messagePlaceholder || "Message"}
-                        onClick={(e) => isSelected && e.stopPropagation()}
+                        value={formState['Message'] || ''}
+                        onChange={(e) => setFormState({ ...formState, 'Message': e.target.value })}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     </div>
                   </>
                 )}
-                <Button onClick={(e: React.MouseEvent<HTMLButtonElement>) => isSelected && e.preventDefault()}>
-                  <EditableText
-                    text={props.submitText}
-                    onTextChange={(newText) => onUpdate({ props: { ...props, submitText: newText } })}
-                    element="span"
-                    placeholder="Submit"
-                    isSelected={isSelected}
-                  />
+                <Button 
+                  disabled={isSubmittingForm}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (isPreview) {
+                      handleFormSubmit(e as any);
+                    }
+                  }}
+                >
+                  {isSubmittingForm ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Sending...
+                    </span>
+                  ) : isPreview ? (
+                    <span>{props.submitText || 'Submit'}</span>
+                  ) : (
+                    <EditableText
+                      text={props.submitText}
+                      onTextChange={(newText) => onUpdate({ props: { ...props, submitText: newText } })}
+                      element="span"
+                      placeholder="Submit"
+                      isSelected={isSelected}
+                    />
+                  )}
                 </Button>
               </CardContent>
             </Card>

@@ -2,11 +2,12 @@ import React, { useEffect, useState } from "react";
 import type { ComponentData } from "../App";
 import { RenderableComponent } from "./RenderableComponent";
 import { scrollToTarget } from "../utils/scrollUtils";
+import { Toaster } from "./ui/sonner";
 
 interface SiteRendererProps {
     components: ComponentData[];
     projectId?: string;
-    userProjectConfig?: { supabaseUrl: string; supabaseKey: string };
+    userProjectConfig?: { supabaseUrl: string; supabaseKey: string; resendApiKey?: string };
     backgroundColor?: string;
     showGrid?: boolean;
     activePageId?: string;
@@ -192,6 +193,7 @@ export function SiteRenderer({
                     : { backgroundColor }
             }
         >
+            <Toaster position="top-right" richColors />
             {filteredComponents.map((component) => {
                 const position = component.position || { x: 0, y: 0 };
                 const isFullWidth = FULL_WIDTH_TYPES.has(component.type);

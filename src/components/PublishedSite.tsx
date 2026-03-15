@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { SiteRenderer } from "./SiteRenderer";
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { Toaster } from "./ui/sonner";
 
 
 export function PublishedSite() {
@@ -127,6 +128,7 @@ export function PublishedSite() {
 
     return (
         <DndProvider backend={HTML5Backend}>
+            <Toaster position="top-right" richColors />
             <SiteRenderer
                 projectId={project.id}
                 components={project.project_layout || []}

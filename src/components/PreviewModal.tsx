@@ -88,6 +88,7 @@ interface PreviewModalProps {
   userProjectConfig?: {
     supabaseUrl: string;
     supabaseKey: string;
+    resendApiKey?: string;
   };
   currentUser?: any;
   canvasBackgroundColor?: string;

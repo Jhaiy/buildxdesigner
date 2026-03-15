@@ -460,6 +460,9 @@ export function EditorLayout({
                           canEditProject ? toggleCanvasGrid : undefined
                         }
                         userProjectConfig={state.userProjectConfig}
+                        onUpdateUserProjectConfig={
+                          canEditProject ? editor.updateUserProjectConfig : undefined
+                        }
                       />
                     )}
 

@@ -27,6 +27,7 @@ interface ProfileBlockProps {
     userProjectConfig?: {
         supabaseUrl: string;
         supabaseKey: string;
+        resendApiKey?: string;
     };
     className?: string;
     style?: React.CSSProperties;
