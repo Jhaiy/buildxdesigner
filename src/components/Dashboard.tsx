@@ -1008,6 +1008,10 @@ export function Dashboard({
   const fetchTemplateLayoutByProjectId = async (
     projectId: string,
   ): Promise<ComponentData[]> => {
+    if (!projectId || projectId === "blank") {
+      return getLocalTemplateComponents(projectId);
+    }
+
     const response = await fetch(
       `${API_URL}/api/template-data/${encodeURIComponent(projectId)}`,
     );
@@ -1020,8 +1024,17 @@ export function Dashboard({
     return extractTemplateLayoutFromApiResponse(json);
   };
 
+  const getLocalTemplateComponents = (templateId: string): ComponentData[] => {
+    switch (templateId) {
+      case "blank":
+        return [];
+      default:
+        return [];
+    }
+  };
+
   const prefetchTemplateLayout = async (projectId: string) => {
-    if (!projectId) return;
+    if (!projectId || projectId === "blank") return;
     if (prefetchedTemplateLayouts[projectId]) return;
     if (prefetchingTemplateIds[projectId]) return;
 
@@ -2077,7 +2090,10 @@ export function Dashboard({
 
   const handleCreateBlankClick = () => {
     setSelectedTemplateId("blank");
-    setShowCreateTemplateModal(true);
+    setProjectName("");
+    setNewProjectDescription("");
+    setNewProjectCategory("Starter");
+    setShowNameProjectDialog(true);
   };
 
   const themeIcons = {
