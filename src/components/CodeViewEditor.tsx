@@ -448,19 +448,21 @@ function generateReadableId(type: string, existingIds: string[] = []): string {
 function extractShortId(cls: string): string | null {
   const first = cls.trim().split(/\s+/)[0]
   if (!first) return null
-
-  const legacy = first.match(/^comp-(.+)$/)
-  if (legacy) return legacy[1]
-  const utilityPattern = /^(p|m|px|py|mx|my|pt|pb|pl|pr|mt|mb|ml|mr|w|h|text|bg|border|rounded|flex|grid|gap|space|items|justify|font|leading|tracking|shadow|opacity|z|top|left|right|bottom|col|row|sr)-/
-  if (utilityPattern.test(first) && !first.match(/^(text|border|bg|grid|flex)-[a-zA-Z]/)) {
-    return null
-  }
-
-  if (/^[a-zA-Z][a-zA-Z0-9-_]*$/.test(first) && first.length >= 2) {
-    return first
-  }
-
-  return null
+  if (!/^[a-z][a-z0-9]*-[a-z][a-z0-9-]*$/.test(first)) return null
+  
+  // Must contain a known component type as the prefix
+  const typePart = first.split("-")[0]
+  const VALID_PREFIXES = new Set([
+    "navbar","hero","footer","heading","text","paragraph","button","image",
+    "input","textarea","select","checkbox","card","container","grid","form",
+    "divider","accordion","tabs","modal","alert","table","gallery","carousel",
+    "section","sign","paymongo","video","group","radio"
+  ])
+  if (!VALID_PREFIXES.has(typePart)) return null
+  
+  // Still block Tailwind utilities
+  const BLOCKED = /^(p|m|px|py|mx|my|pt|pb|pl|pr|mt|mb|ml|mr|w|h|text|bg|border|rounded|flex|grid|gap|font|shadow|opacity|z|col|row|overflow|cursor|ring|scale|rotate|translate|animate)-/
+  return BLOCKED.test(first) ? null : first
 }
 
 function extractClassName(cls: string) { return cls.trim().split(/\s+/)[0] || cls.trim() }
@@ -710,7 +712,9 @@ function parsePHPToFullComponentList(
       const openEnd = match.indexOf(">") + 1
       const closeStart = match.lastIndexOf("</")
       if (openEnd <= 0 || closeStart <= openEnd) return match
-      return match.slice(0, openEnd) + " ".repeat(closeStart - openEnd) + match.slice(closeStart)
+      // Preserve exact length so other match indices stay valid
+      const inner = match.slice(openEnd, closeStart)
+      return match.slice(0, openEnd) + inner.replace(/[^\n]/g, " ") + match.slice(closeStart)
     })
   }
 
@@ -901,6 +905,7 @@ function syncPHPToCanvas(
   cssCode: string | null,
   allComponents: ComponentData[],
   pageId: string,
+  allowDeletion = false, 
 ): { components: ComponentData[]; added: number; deleted: number; updated: number } {
 
   const parsedList = parsePHPToFullComponentList(phpCode, pageId, allComponents)
@@ -911,18 +916,18 @@ function syncPHPToCanvas(
   console.log("[sync] allComponents:", allComponents.map(c => ({ id: c.id, sid: sanitizeId(c.id), page_id: c.page_id })))
 
   // Components strictly from OTHER pages — untouched
-  const otherPages = allComponents.filter(c =>
-    c.page_id !== pageId &&
-    c.page_id !== undefined &&
-    c.page_id !== null &&
-    c.page_id !== ""
-  )
+  const otherPages = allComponents.filter(c => {
+    if (!c.page_id || c.page_id === "") return false  // no page_id = treat as current page
+    if (c.page_id === "all") return false              // "all" handled separately below
+    return c.page_id !== pageId
+  })
+
+  const allPageComponents = allComponents.filter(c => c.page_id === "all")
 
   // THIS page's components that the parser did NOT find (genuinely removed from PHP)
-  const thisPageOrphans = allComponents.filter(c =>
-    (c.page_id === pageId || !c.page_id) &&
-    !parsedSids.has(sanitizeId(c.id))
-  )
+  const thisPageOrphans = allowDeletion
+    ? allComponents.filter(c => c.page_id === pageId && !parsedSids.has(sanitizeId(c.id)))
+    : []
 
   console.log("[sync] thisPageOrphans:", thisPageOrphans.map(c => ({ id: c.id, sid: sanitizeId(c.id) })))
 
@@ -935,18 +940,15 @@ function syncPHPToCanvas(
     }
   }
 
-  const finalComponents = [
-    ...otherPages,
-    ...parsedList,
-  ]
-
-  const seen = new Set<string>()
-  const uniqueComponents = finalComponents.filter(c => {
-    const sid = sanitizeId(c.id)
-    if (seen.has(sid)) return false
-    seen.add(sid)
-    return true
-  })
+// Build a map: sid → component, parsed ones win over otherPages/allPage
+const mergedMap = new Map<string, ComponentData>()
+for (const c of [...otherPages, ...allPageComponents]) {
+  mergedMap.set(sanitizeId(c.id), c)
+}
+for (const c of parsedList) {
+  mergedMap.set(sanitizeId(c.id), c)
+}
+const uniqueComponents = [...mergedMap.values()]
 
   const existingIds = new Set(allComponents.map(c => sanitizeId(c.id)))
   const added = parsedList.filter(c => !existingIds.has(sanitizeId(c.id))).length
@@ -1173,11 +1175,14 @@ export function CodeViewEditor({
 
     try {
       const { components: synced, added, deleted, updated } = syncPHPToCanvas(
-        content,
-        cssCode,
-        componentsRef.current,
-        activePHPPageId
+        content, cssCode, componentsRef.current, activePHPPageId,
+        true  // ← allowDeletion should be true here
       )
+
+      if (synced.length === 0 && draftContent.trim().length > 100) {
+        toast.error("Parse returned 0 components — sync aborted to prevent data loss.")
+        return
+      }
 
       onCodeChange(synced)
 
@@ -1310,7 +1315,8 @@ export function CodeViewEditor({
       const cssCode = effectiveFiles[cssFile] ?? null
       try {
         const { components: synced, added, deleted, updated } = syncPHPToCanvas(
-          draftContent, cssCode, componentsRef.current, activePHPPageId
+          draftContent, cssCode, componentsRef.current, activePHPPageId,
+          true  // ← add this
         )
         onCodeChange(synced)
         const parts = [
