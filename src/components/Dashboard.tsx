@@ -35,7 +35,6 @@ import {
   Code2,
   User,
   Library,
-  Flag,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -87,13 +86,11 @@ import {
   fetchTrashedProjectsFromApi,
   insertTemplateFlagFromApi,
 } from "../utils/apiHelper";
-import { ReportTemplateModal } from "./FlagTemplateModal";
 // MarketplaceComponentModal removed — import happens inline on card click
 import { toast } from "sonner";
 import { importPublishedComponent } from "../supabase/data/publishedComponentService";
 import { deleteCustomComponent } from "../supabase/data/customComponentService";
 import { ReportTemplateModal } from "./FlagTemplateModal";
-import toast, { Toaster } from "react-hot-toast";
 
 type DashboardSection =
   | "new-chat"
@@ -415,9 +412,6 @@ export function Dashboard({
     TemplateCardData[]
   >([]);
   const [trendingLoading, setTrendingLoading] = useState(false);
-  const [showReportTemplateModal, setShowReportTemplateModal] = useState(false);
-  const [selectedReportTemplate, setSelectedReportTemplate] =
-    useState<TemplateCardData | null>(null);
 
   const [marketplaceComponents, setMarketplaceComponents] = useState<any[]>([]);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
@@ -2457,7 +2451,6 @@ export function Dashboard({
   return (
     // Use flex h-screen and allow page scrolling so gallery and bottom content are reachable
     <div className="dashboard-gradient-surface flex h-screen overflow-auto">
-      <Toaster position="bottom-right" />
       {/* Mobile Overlay */}
       {sidebarVisible && (
         <div
