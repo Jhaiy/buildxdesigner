@@ -1,5 +1,6 @@
 import { getApiBaseUrl } from "../utils/apiConfig";
 import type { Project } from "../supabase/types/project";
+import { supabase } from "../supabase/config/supabaseClient";
 
 export async function fetchDraftProjectsFromApi(
   userId: string,
@@ -119,4 +120,10 @@ export async function fetchTrashedProjectsFromApi(
     project_layout: project.project_layout || [],
     type: project.type || "design",
   }));
+}
+
+export async function sendPasswordResetEmail(email: string) {
+  const redirectTo = `${window.location.origin}/forgot-password`;
+
+  return await supabase.auth.resetPasswordForEmail(email, { redirectTo });
 }
