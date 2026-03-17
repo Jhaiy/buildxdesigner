@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Eye, EyeOff, Lock, Mail, User, Phone, Smartphone, Check, AlertCircle } from 'lucide-react';
+import { X, Eye, EyeOff, Lock, Mail, User, Check, AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Separator } from './ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+
 import { useGoogleAuth } from './GoogleAuthService';
 import origIcon from '@/assets/3783c8fc9c2bbb9005e59c39e377b8d4ab7a0e4b.png';
-import { signInWithEmail, signUpWithEmail, sendPhoneOtp, verifyPhoneOtp, updateUserName } from '../supabase/auth/authService';
-
+import { signInWithEmail, signUpWithEmail } from '../supabase/auth/authService';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -18,7 +17,6 @@ interface AuthModalProps {
   onSuccess: (isSignup?: boolean) => void;
 }
 
-type AuthMethod = 'email' | 'phone';
 
 interface PasswordRequirement {
   label: string;
@@ -33,17 +31,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [currentType, setCurrentType] = useState(type);
-  const [authMethod, setAuthMethod] = useState<AuthMethod>('email');
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    phone: '',
+  
     password: '',
     confirmPassword: '',
-    verificationCode: ''
+   
   });
   const [loading, setLoading] = useState(false);
-  const [showVerification, setShowVerification] = useState(false);
+ 
   const [authError, setAuthError] = useState<string | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const { signIn: googleSignIn, loading: googleLoading, error: googleError } = useGoogleAuth();
@@ -73,117 +71,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       window.removeEventListener('switchAuth', handleSwitchAuth as EventListener);
     };
   }, []);
+ const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setAuthError(null);
+    setAuthMessage(null);
 
-const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setAuthError(null); // Clear previous errors  
-    setAuthMessage(null); // Clear previous messages
-    // Note: We leave showVerification as is if it's currently true for phone verification
+    const { email, password, confirmPassword, name } = formData;
+    let result;
 
-    if (authMethod === 'email') {
-        const { email, password, confirmPassword, name } = formData;
-        let result;
+               if (currentType === 'signup') {
+      if (password !== confirmPassword) {
+        setAuthError('Passwords do not match.');
+        setLoading(false);
+        return;
+      }
+      result = await signUpWithEmail(email, password, name);
+    } else {
+      result = await signInWithEmail(email, password);
+    }
 
-        if (currentType === 'signup') {
-            if (password !== confirmPassword) {
-                setAuthError('Passwords do not match.');
-                setLoading(false);
-                return;
-            }
-            result = await signUpWithEmail(email, password, name);
-        } else {
-            result = await signInWithEmail(email, password);
-        }
+     if (result.error) {
+      setAuthError(result.error.message);
+    } else if (result.success) {
+      const needsConfirmation = result.message && result.message.includes('Check your email');
 
-        if (result.error) {
-            setAuthError(result.error.message);
-        } else if (result.success) {
-            
-            // Check if the success message explicitly indicates confirmation is needed
-            const needsConfirmation = result.message && result.message.includes('Check your email');
+      if (needsConfirmation) {
+        setAuthMessage(`Confirmation email sent to ${email}. Please check your inbox and spam folder.`);
+        setFormData({ name: '', email: '', password: '', confirmPassword: '' });
+        setShowPasswordValidation(false);
+        setPasswordsMatch(true);
+      } else {
+        setAuthMessage(result.message || (currentType === 'login' ? 'Login successful!' : 'Sign-up successful!'));
 
-            if (needsConfirmation) {
-                // Display confirmation message and reset form fields immediately
-                setAuthMessage(`Confirmation email sent to ${email}. Please check your inbox and spam folder.`);
-                
-                // Reset form data
-                setFormData({ name: '', email: '', phone: '', password: '', confirmPassword: '', verificationCode: '' });
-                
-                // ✅ Reset Password Validation UI State
-                setShowPasswordValidation(false);
-                setPasswordsMatch(true);
+        setTimeout(() => {
+          onSuccess(currentType === 'signup');
+          onClose();
+          setFormData({ name: '', email: '', password: '', confirmPassword: '' });
+          setShowPasswordValidation(false);
+          setPasswordsMatch(true);
+        }, 500);
+      }
+    }
 
-            } else {
-                // Login successful or signup without confirmation
-                setAuthMessage(result.message || (currentType === 'login' ? 'Login successful!' : 'Sign-up successful!'));
-
-                setTimeout(() => {
-                    onSuccess(currentType === 'signup');
-                    onClose();
-                    setFormData({ name: '', email: '', phone: '', password: '', confirmPassword: '', verificationCode: '' });
-                    
-                    // ✅ Reset Password Validation UI State on closing the modal after success
-                    setShowPasswordValidation(false);
-                    setPasswordsMatch(true);
-                    
-                }, 500);
-            }
-        }
-        setLoading(false); 
-
-    } else if (authMethod === 'phone') {
-        const { phone, verificationCode, name } = formData;
-        let result;
-
-        if (!showVerification) {
-            const type = currentType === 'signup' ? 'signup' : 'signin';
-            
-            if (currentType === 'signup') {
-                const userExistsCheck = await sendPhoneOtp(phone, 'signin'); 
-
-                if (userExistsCheck.success) {
-                    setAuthError('This phone number is already registered. Please switch to the "Sign in" tab.');
-                    setLoading(false);
-                    return;
-                }                
-            }
-            result = await sendPhoneOtp(phone, type); 
-            
-            if (result.error) {
-                setAuthError(result.error.message);
-            } else if (result.success) {
-                setAuthMessage(`Code sent to ${phone}.`);
-                setShowVerification(true); 
-            }
-
-        } else {
-            result = await verifyPhoneOtp(phone, verificationCode); 
-
-            if (result.error) {
-                setAuthError(result.error.message);
-            } else if (result.success) {
-                
-                if (currentType === 'signup' && name) {
-                    const updateResult = await updateUserName(name); 
-                    if (updateResult.error) {
-                        console.error('Failed to save user name:', updateResult.error.message);
-                    }
-                }
-                
-                setAuthMessage(result.message || 'Verification successful. Redirecting...');
-                
-                setTimeout(() => {
-                    onSuccess(currentType === 'signup');
-                    onClose();
-                    setFormData({ name: '', email: '', phone: '', password: '', confirmPassword: '', verificationCode: '' });
-                    setShowVerification(false);
-                }, 500);
-            }
-        }
-        setLoading(false);
-    }
-};
+setLoading(false);
+  };
 
   const handleInputChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({ ...prev, [field]: e.target.value }));
@@ -225,10 +157,10 @@ const handleSubmit = async (e: React.FormEvent) => {
       setFormData({
         name: '',
         email: '',
-        phone: '',
+      
         password: '',
         confirmPassword: '',
-        verificationCode: ''
+     
       });
       
     } catch (error) {
@@ -348,255 +280,132 @@ const handleSubmit = async (e: React.FormEvent) => {
                     <div className="flex-grow border-t border-gray-200"></div>
                   </div>
 
-                  {/* Auth Method Selection */}
-                  <Tabs value={authMethod} onValueChange={(value) => setAuthMethod(value as AuthMethod)} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 mb-2 h-8">
-                      <TabsTrigger value="email" className="flex items-center gap-1 text-xs">
-                        <Mail className="w-3 h-3" />
-                        Email
-                      </TabsTrigger>
-                      <TabsTrigger value="phone" className="flex items-center gap-1 text-xs">
-                        <Smartphone className="w-3 h-3" />
-                        Phone
-                      </TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="email" className="space-y-2 mt-0">
-                      <form onSubmit={handleSubmit} className="space-y-2">
-                        {currentType === 'signup' && (
-                          <div className="space-y-1">
-                            <Label htmlFor="name" className="text-xs font-medium">Full Name</Label>
-                            <div className="relative">
-                              <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                              <Input
-                                id="name"
-                                type="text"
-                                placeholder="Enter your full name"
-                                value={formData.name}
-                                onChange={handleInputChange('name')}
-                                className="pl-8 h-8 text-xs"
-                                required
-                              />
-                            </div>
-                          </div>
-                        )}
+                   <form onSubmit={handleSubmit} className="space-y-2">
+                    {currentType === 'signup' && (
+                      <div className="space-y-1">
+                        <Label htmlFor="name" className="text-xs font-medium">Full Name</Label>
+                        <div className="relative">
+                          <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                          <Input
+                            id="name"
+                            type="text"
+                            placeholder="Enter your full name"
+                            value={formData.name}
+                            onChange={handleInputChange('name')}
+                            className="pl-8 h-8 text-xs"
+                            required
+                          />
+                        </div>
+                         </div>
+                    )}
 
                         <div className="space-y-1">
-                          <Label htmlFor="email" className="text-xs font-medium">Email Address</Label>
-                          <div className="relative">
-                            <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                            <Input
-                              id="email"
-                              type="email"
-                              placeholder="Enter your email"
-                              value={formData.email}
-                              onChange={handleInputChange('email')}
-                              className="pl-8 h-8 text-xs"
-                              required
-                            />
-                          </div>
-                        </div>
+                      <Label htmlFor="email" className="text-xs font-medium">Email</Label>
+                      <div className="relative">
+                        <Mail className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="Enter your email"
+                          value={formData.email}
+                          onChange={handleInputChange('email')}
+                          className="pl-8 h-8 text-xs"
+                          required
+                        />
+                      </div>
+                    </div>
 
-                        <div className="space-y-1">
-                          <Label htmlFor="password" className="text-xs font-medium">Password</Label>
-                          <div className="relative">
-                            <Lock className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                            <Input
-                              id="password"
-                              type={showPassword ? 'text' : 'password'}
-                              placeholder="Enter your password"
-                              value={formData.password}
-                              onChange={handleInputChange('password')}
-                              className="pl-8 pr-8 h-8 text-xs"
-                              required
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                              {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Password Strength Indicator for Signup */}
-                        {currentType === 'signup' && showPasswordValidation && (
-                          <div className="p-2 bg-muted/50 rounded-md space-y-1">
-                            <p className="text-xs font-medium text-muted-foreground mb-1">Password requirements:</p>
-                            <div className="grid grid-cols-1 gap-0.5">
-                              {passwordRequirements.map((req, index) => (
-                                <div key={index} className="flex items-center gap-1 text-xs">
-                                  {req.met ? (
-                                    <Check className="w-2.5 h-2.5 text-green-600 flex-shrink-0" />
-                                  ) : (
-                                    <AlertCircle className="w-2.5 h-2.5 text-muted-foreground flex-shrink-0" />
-                                  )}
-                                  <span className={req.met ? 'text-green-600 font-medium text-[10px]' : 'text-muted-foreground text-[10px]'}>
-                                    {req.label}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {currentType === 'signup' && (
-                          <div className="space-y-1">
-                            <Label htmlFor="confirmPassword" className="text-xs font-medium">Confirm Password</Label>
-                            <div className="relative">
-                              <Lock className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                              <Input
-                                id="confirmPassword"
-                                type={showPassword ? 'text' : 'password'}
-                                placeholder="Confirm your password"
-                                value={formData.confirmPassword}
-                                onChange={handleInputChange('confirmPassword')}
-                                className={`pl-8 h-8 text-xs ${!passwordsMatch && formData.confirmPassword ? 'border-red-500 focus:border-red-500' : ''}`}
-                                required
-                              />
-                            </div>
-                            
-                            {/* Password Match Validation */}
-                            {formData.confirmPassword && !passwordsMatch && (
-                              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-red-600">
-                                <AlertCircle className="w-2.5 h-2.5" />
-                                <span>Passwords do not match</span>
-                              </div>
-                            )}
-                            
-                            {formData.confirmPassword && passwordsMatch && (
-                              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-green-600">
-                                <Check className="w-2.5 h-2.5" />
-                                <span>Passwords match</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        <Button
-                          type="submit"
-                          size="sm"
-                          className="w-full h-8 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium shadow-lg hover:shadow-xl transition-all duration-200 text-xs mt-2"
-                          disabled={loading}
+                       <div className="space-y-1">
+                      <Label htmlFor="password" className="text-xs font-medium">Password</Label>
+                      <div className="relative">
+                        <Lock className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                        <Input
+                          id="password"
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="Enter your password"
+                          value={formData.password}
+                          onChange={handleInputChange('password')}
+                          className="pl-8 pr-8 h-8 text-xs"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                         >
-                          {loading ? (
-                            <motion.div
-                              animate={{ rotate: 360 }}
-                              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                              className="w-3 h-3 border-2 border-current border-t-transparent rounded-full mr-1.5"
-                            />
-                          ) : null}
-                          {loading 
-                            ? 'Please wait...' 
-                            : currentType === 'login' 
-                              ? 'Sign In' 
-                              : 'Create Account'
-                          }
-                        </Button>
-                      </form>
-                    </TabsContent>
+                           {showPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                        </button>
+                      </div>
 
-                    <TabsContent value="phone" className="space-y-2 mt-0">
-                      <form onSubmit={handleSubmit} className="space-y-2">
-                        {currentType === 'signup' && (
-                          <div className="space-y-1">
-                            <Label htmlFor="name-phone" className="text-xs font-medium">Full Name</Label>
-                            <div className="relative">
-                              <User className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                              <Input
-                                id="name-phone"
-                                type="text"
-                                placeholder="Enter your full name"
-                                value={formData.name}
-                                onChange={handleInputChange('name')}
-                                className="pl-8 h-8 text-xs"
-                                required
-                              />
+                     {currentType === 'signup' && showPasswordValidation && (
+                        <div className="space-y-0.5 mt-1 p-1.5 bg-muted/30 rounded border">
+                          {passwordRequirements.map((requirement, index) => (
+                            <div key={index} className="flex items-center gap-1 text-[10px]">
+                              {requirement.met ? (
+                                <Check className="w-2.5 h-2.5 text-green-600" />
+                              ) : (
+                                <div className="w-2.5 h-2.5 rounded-full border border-muted-foreground/50" />
+                              )}
+                              <span className={requirement.met ? 'text-green-600' : 'text-muted-foreground'}>
+                                {requirement.label}
+                              </span>
                             </div>
-                          </div>
-                        )}
-
-                        <div className="space-y-1">
-                          <Label htmlFor="phone" className="text-xs font-medium">Phone Number</Label>
-                          <div className="relative">
-                            <Phone className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                            <Input
-                              id="phone"
-                              type="tel"
-                              placeholder="+63 (926) 123-4567"
-                              value={formData.phone}
-                              onChange={handleInputChange('phone')}
-                              className="pl-8 h-8 text-xs"
-                              required
-                              disabled={showVerification}
-                            />
-                          </div>
+                           ))}
+                        </div>
+                      )}
+                    </div>
+                          {currentType === 'signup' && (
+                      <div className="space-y-1">
+                        <Label htmlFor="confirmPassword" className="text-xs font-medium">Confirm Password</Label>
+                        <div className="relative">
+                          <Lock className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                          <Input
+                            id="confirmPassword"
+                            type={showPassword ? 'text' : 'password'}
+                            placeholder="Confirm your password"
+                            value={formData.confirmPassword}
+                            onChange={handleInputChange('confirmPassword')}
+                            className={`pl-8 h-8 text-xs ${!passwordsMatch && formData.confirmPassword ? 'border-red-500 focus:border-red-500' : ''}`}
+                            required
+                          />
                         </div>
 
-                        {showVerification && (
-                          <div className="space-y-1">
-                            <Label htmlFor="verification" className="text-xs font-medium">Verification Code</Label>
-                            <div className="relative">
-                              <Smartphone className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                              <Input
-                                id="verification"
-                                type="text"
-                                placeholder="Enter 6-digit code"
-                                value={formData.verificationCode}
-                                onChange={handleInputChange('verificationCode')}
-                                className="pl-8 h-8 text-center tracking-widest text-xs"
-                                maxLength={6}
-                                required
-                              />
-                            </div>
-                            <p className="text-[10px] text-muted-foreground text-center">
-                              Code sent to {formData.phone}
-                            </p>
+                       {formData.confirmPassword && !passwordsMatch && (
+                          <div className="flex items-center gap-1 mt-0.5 text-[10px] text-red-600">
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            <span>Passwords do not match</span>
                           </div>
                         )}
 
-                        <Button
-                          type="submit"
-                          size="sm"
-                          className="w-full h-8 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium shadow-lg hover:shadow-xl transition-all duration-200 text-xs"
-                          disabled={loading}
-                        >
-                          {loading ? (
-                            <motion.div
-                              animate={{ rotate: 360 }}
-                              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                              className="w-3 h-3 border-2 border-current border-t-transparent rounded-full mr-1.5"
-                            />
-                          ) : null}
-                          {loading 
-                            ? 'Please wait...' 
-                            : showVerification 
-                              ? 'Verify & Continue'
-                              : currentType === 'login' 
-                                ? 'Send Code' 
-                                : 'Send Code'
-                          }
-                        </Button>
-
-                        {showVerification && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="w-full text-[10px] h-7"
-                            onClick={() => {
-                              setShowVerification(false);
-                              setFormData(prev => ({ ...prev, verificationCode: '' }));
-                            }}
-                          >
-                            Use different number
-                          </Button>
+                      {formData.confirmPassword && passwordsMatch && (
+                          <div className="flex items-center gap-1 mt-0.5 text-[10px] text-green-600">
+                            <Check className="w-2.5 h-2.5" />
+                            <span>Passwords match</span>
+                          </div>
                         )}
-                      </form>
-                    </TabsContent>
-                  </Tabs>
+                      </div>
+                    )}
 
+                    <Button
+                      type="submit"
+                      size="sm"
+                      className="w-full h-8 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium shadow-lg hover:shadow-xl transition-all duration-200 text-xs mt-2"
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          className="w-3 h-3 border-2 border-current border-t-transparent rounded-full mr-1.5"
+                        />
+                      ) : null}
+                      {loading
+                        ? 'Please wait...'
+                        : currentType === 'login'
+                          ? 'Sign In'
+                          : 'Create Account'}
+                    </Button>
+                  </form>
                   {/* Switch Auth Type */}
                   <div className="text-center pt-2 border-t">
                     <p className="text-xs text-muted-foreground">

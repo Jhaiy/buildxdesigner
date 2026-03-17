@@ -1735,13 +1735,7 @@ export function EditorTopBar({
               <Edit2 className="w-4 h-4 mr-2" />
               Rename
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => setShowPreferences(true)}
-              className="cursor-pointer"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              Preferences
-            </DropdownMenuItem>
+           
             <DropdownMenuItem
               onClick={() => setShowKeyboardShortcuts(true)}
               className="cursor-pointer"

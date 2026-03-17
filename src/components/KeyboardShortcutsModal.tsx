@@ -33,48 +33,15 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
       category: 'General',
       shortcuts: [
         { action: 'Save Project', keys: ['Ctrl', 'S'], description: 'Save your current work' },
-        { action: 'New Project', keys: ['Ctrl', 'N'], description: 'Create a new project' },
-        { action: 'Open Templates', keys: ['Ctrl', 'O'], description: 'Browse template library' },
-        { action: 'Preview', keys: ['Ctrl', 'P'], description: 'Preview your website' },
-        { action: 'Fullscreen', keys: ['F11'], description: 'Toggle fullscreen mode' },
+       
         { action: 'Undo', keys: ['Ctrl', 'Z'], description: 'Undo last action' },
         { action: 'Redo', keys: ['Ctrl', 'Shift', 'Z'], description: 'Redo last undone action' },
       ],
     },
     {
-      category: 'View',
-      shortcuts: [
-        { action: 'Toggle Left Sidebar', keys: ['Ctrl', 'B'], description: 'Show/hide component palette' },
-        { action: 'Toggle Right Sidebar', keys: ['Ctrl', 'Shift', 'R'], description: 'Show/hide properties panel' },
-        { action: 'Toggle Properties Panel', keys: ['Ctrl', 'Shift', 'P'], description: 'Show/hide properties' },
-        { action: 'Toggle AI Assistant', keys: ['Ctrl', 'Shift', 'A'], description: 'Show/hide AI assistant' },
-        { action: 'Toggle Split View', keys: ['Ctrl', '\\'], description: 'Enable split design/code view' },
-        { action: 'Switch to Design View', keys: ['Ctrl', '1'], description: 'Show only design canvas' },
-        { action: 'Switch to Code View', keys: ['Ctrl', '2'], description: 'Show only code editor' },
-      ],
-    },
-    {
-      category: 'Canvas',
-      shortcuts: [
-        { action: 'Zoom In', keys: ['Ctrl', '+'], description: 'Increase canvas zoom' },
-        { action: 'Zoom Out', keys: ['Ctrl', '-'], description: 'Decrease canvas zoom' },
-        { action: 'Reset Zoom', keys: ['Ctrl', '0'], description: 'Reset zoom to 100%' },
-        { action: 'Delete Component', keys: ['Delete'], description: 'Remove selected component' },
-        { action: 'Deselect', keys: ['Esc'], description: 'Clear component selection' },
-      ],
-    },
-    {
-      category: 'Code Editor',
-      shortcuts: [
-        { action: 'Toggle Editor Mode', keys: ['Ctrl', 'E'], description: 'Switch between blocks and dual-pane' },
-        { action: 'Find', keys: ['Ctrl', 'F'], description: 'Search in code' },
-        { action: 'Replace', keys: ['Ctrl', 'H'], description: 'Find and replace' },
-        { action: 'Comment Line', keys: ['Ctrl', '/'], description: 'Toggle line comment' },
-        { action: 'Indent', keys: ['Tab'], description: 'Indent selected lines' },
-        { action: 'Outdent', keys: ['Shift', 'Tab'], description: 'Remove indentation' },
-      ],
-    },
-    {
+      
+     
+      
       category: 'Components',
       shortcuts: [
         { action: 'Copy Component', keys: ['Ctrl', 'C'], description: 'Copy selected component' },
@@ -83,14 +50,8 @@ export function KeyboardShortcutsModal({ isOpen, onClose }: KeyboardShortcutsMod
         { action: 'Select All', keys: ['Ctrl', 'A'], description: 'Select all components' },
       ],
     },
-    {
-      category: 'Navigation',
-      shortcuts: [
-        { action: 'Go to Dashboard', keys: ['Ctrl', 'Shift', 'D'], description: 'Return to dashboard' },
-        { action: 'Open Settings', keys: ['Ctrl', ','], description: 'Open preferences' },
-        { action: 'Toggle Command Palette', keys: ['Ctrl', 'K'], description: 'Open quick command menu' },
-      ],
-    },
+    
+     
   ];
 
   const filteredShortcuts = shortcuts.map(category => ({

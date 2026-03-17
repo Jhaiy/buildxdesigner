@@ -6,14 +6,12 @@ import {
     Phone,
     MapPin,
     Calendar,
-    Shield,
-    Bell,
-    Lock,
+   
     Camera,
     Save,
     Upload,
     Loader2,
-    ArrowRight,
+   
     Database,
     CreditCard,
     Eye,
@@ -25,12 +23,12 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { Switch } from './ui/switch';
+
 import { Separator } from './ui/separator';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { getSupabaseSession } from '../supabase/auth/authService';
 import { supabase } from '../supabase/config/supabaseClient';
-import { changePassword } from '../supabase/data/userProfile';
+
 import { fetchUserProfile, updateProfile, uploadAvatar } from '../supabase/data/userProfile';
 import { PayMongoSettings } from './PayMongoSettings';
 import { getBackendUrl } from '../utils/backendConfig';
@@ -55,6 +53,8 @@ interface AccountSettingsModalProps {
 }
 
 export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }: AccountSettingsModalProps) {
+     const supportedTabs = new Set(["profile", "integration"]);
+    const activeTab = supportedTabs.has(defaultTab) ? defaultTab : "profile";
     const [profileData, setProfileData] = useState<ProfileDataState>({
         fullName: '',
         email: '',
@@ -74,15 +74,7 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-    // Mock state for other tabs (notifications, security)
-    const [notifications, setNotifications] = useState({ emailNotifications: true, projectUpdates: true, weeklyDigest: false, marketingEmails: false });
-    const [security, setSecurity] = useState({ twoFactorAuth: false, loginAlerts: true });
-
-    // State for password form
-    const [currentPassword, setCurrentPassword] = useState('');
-    const [newPassword, setNewPassword] = useState('');
-    const [confirmNewPassword, setConfirmNewPassword] = useState('');
-    const [isPasswordChanging, setIsPasswordChanging] = useState(false);
+   
 
     const [isConnectingSupabase, setIsConnectingSupabase] = useState(false);
     const [isDisconnectingSupabase, setIsDisconnectingSupabase] = useState(false);
@@ -111,10 +103,6 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
                     paymongo_key: data.paymongo_key || '',
                     resend_api_key: data.resend_api_key || ''
                 });
-                // Clear password fields on modal open
-                setCurrentPassword('');
-                setNewPassword('');
-                setConfirmNewPassword('');
             }
             setIsLoading(false);
         }
@@ -134,8 +122,6 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
         };
     }, [isOpen]);
 
-    // Check if the user is a social login user (e.g., 'google', 'github', 'discord')
-    const isSocialLogin = profileData.provider !== 'email';
 
     // --- Change Tracking ---
     const hasChanges = JSON.stringify(profileData) !== JSON.stringify(initialData);
@@ -156,7 +142,7 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
         // Prepare data for update (omitting provider, joinedDate, user_id, etc. which are not directly editable here)
         const updates: any = {};
         if (profileData.fullName !== initialData?.fullName) updates.fullName = profileData.fullName;
-        if (profileData.email !== initialData?.email) updates.email = profileData.email;
+      
         if (profileData.phone !== initialData?.phone) updates.phone = profileData.phone;
         if (profileData.location !== initialData?.location) updates.location = profileData.location;
         if (profileData.paymongo_key !== initialData?.paymongo_key) updates.paymongoKey = profileData.paymongo_key;
@@ -202,59 +188,7 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
         setUploading(false);
     };
 
-    // --- Handler (Change Password) ---
-    const handleChangePassword = async () => {
-        setError(null);
-        setSuccessMessage(null);
-
-        if (isSocialLogin) {
-            setError("Password cannot be changed. You signed in with a social account.");
-            return;
-        }
-
-        if (!currentPassword) {
-            setError("Please enter your current password.");
-            return;
-        }
-        if (!newPassword || newPassword.length < 6) {
-            setError("New password must be at least 6 characters long.");
-            return;
-        }
-        if (newPassword !== confirmNewPassword) {
-            setError("New passwords do not match.");
-            return;
-        }
-        if (currentPassword === newPassword) {
-            setError("New password cannot be the same as the current password.");
-            return;
-        }
-
-        setIsPasswordChanging(true);
-
-        const { error: reauthError } = await supabase.auth.signInWithPassword({
-            email: profileData.email,
-            password: currentPassword,
-        });
-
-        if (reauthError) {
-            setIsPasswordChanging(false);
-            setError(`Current password is incorrect. (${reauthError.message})`);
-            return;
-        }
-
-        const { error: updateError } = await changePassword(newPassword);
-
-        setIsPasswordChanging(false);
-
-        if (updateError) {
-            setError(updateError);
-        } else {
-            setSuccessMessage("Password updated successfully!");
-            setCurrentPassword('');
-            setNewPassword('');
-            setConfirmNewPassword('');
-        }
-    };
+ 
 
     // Fallback for avatar display
     const getAvatarFallback = () => {
@@ -286,7 +220,7 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
                     </DialogDescription>
                 </DialogHeader>
 
-                <Tabs defaultValue={defaultTab} className="w-full">
+                  <Tabs defaultValue={activeTab} className="w-full">
                     <TabsList className="w-full justify-start px-6 bg-transparent border-b border-border rounded-none h-auto p-0">
                         <TabsTrigger
                             value="profile"
@@ -295,20 +229,7 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
                             <User className="w-4 h-4 mr-2" />
                             Profile
                         </TabsTrigger>
-                        <TabsTrigger
-                            value="notifications"
-                            className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent"
-                        >
-                            <Bell className="w-4 h-4 mr-2" />
-                            Notifications
-                        </TabsTrigger>
-                        <TabsTrigger
-                            value="security"
-                            className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent"
-                        >
-                            <Shield className="w-4 h-4 mr-2" />
-                            Security
-                        </TabsTrigger>
+                       
                         <TabsTrigger
                             value="integration"
                             className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent"
@@ -413,11 +334,14 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
                                                             id="email"
                                                             type="email"
                                                             value={profileData.email}
-                                                            onChange={(e) => handleInputChange('email', e.target.value)}
+                                                        
                                                             className="pl-10"
                                                             required
+                                                             readOnly
+                                                            disabled
                                                         />
                                                     </div>
+                                                     <p className="text-xs text-muted-foreground">Email address can't be changed.</p>
                                                 </div>
 
                                                 <div className="space-y-2">
@@ -457,224 +381,7 @@ export function AccountSettingsModal({ isOpen, onClose, defaultTab = "profile" }
                                     </div>
                                 </TabsContent>
 
-                                {/* Notifications Tab (Content untouched) */}
-                                <TabsContent value="notifications" className="mt-0">
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h3 className="text-foreground mb-1">Email Notifications</h3>
-                                            <p className="text-sm text-muted-foreground">
-                                                Manage how you receive notifications
-                                            </p>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            {/* Email Notifications Card */}
-                                            <Card className="border-border">
-                                                <CardContent className="pt-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-0.5">
-                                                            <Label>Email Notifications</Label>
-                                                            <p className="text-sm text-muted-foreground">
-                                                                Receive notifications via email
-                                                            </p>
-                                                        </div>
-                                                        <Switch
-                                                            checked={notifications.emailNotifications}
-                                                            onCheckedChange={(checked) => setNotifications({ ...notifications, emailNotifications: checked })}
-                                                        />
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-
-                                            {/* Project Updates Card */}
-                                            <Card className="border-border">
-                                                <CardContent className="pt-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-0.5">
-                                                            <Label>Project Updates</Label>
-                                                            <p className="text-sm text-muted-foreground">
-                                                                Get notified about project changes and updates
-                                                            </p>
-                                                        </div>
-                                                        <Switch
-                                                            checked={notifications.projectUpdates}
-                                                            onCheckedChange={(checked) => setNotifications({ ...notifications, projectUpdates: checked })}
-                                                        />
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-
-                                            {/* Weekly Digest Card */}
-                                            <Card className="border-border">
-                                                <CardContent className="pt-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-0.5">
-                                                            <Label>Weekly Digest</Label>
-                                                            <p className="text-sm text-muted-foreground">
-                                                                Receive a weekly summary of your activity
-                                                            </p>
-                                                        </div>
-                                                        <Switch
-                                                            checked={notifications.weeklyDigest}
-                                                            onCheckedChange={(checked) => setNotifications({ ...notifications, weeklyDigest: checked })}
-                                                        />
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-
-                                            {/* Marketing Emails Card */}
-                                            <Card className="border-border">
-                                                <CardContent className="pt-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-0.5">
-                                                            <Label>Marketing Emails</Label>
-                                                            <p className="text-sm text-muted-foreground">
-                                                                Receive updates about new features and offers
-                                                            </p>
-                                                        </div>
-                                                        <Switch
-                                                            checked={notifications.marketingEmails}
-                                                            onCheckedChange={(checked) => setNotifications({ ...notifications, marketingEmails: checked })}
-                                                        />
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        </div>
-                                    </div>
-                                </TabsContent>
-
-                                {/* Security Tab (WITH CHANGE PASSWORD LOGIC) */}
-                                <TabsContent value="security" className="mt-0">
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h3 className="text-foreground mb-1">Security Settings</h3>
-                                            <p className="text-sm text-muted-foreground">
-                                                Manage your account security preferences
-                                            </p>
-                                        </div>
-
-                                        <div className="space-y-4">
-                                            {/* Two-Factor Authentication Card (Mocked) */}
-                                            <Card className="border-border">
-                                                <CardContent className="pt-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-0.5">
-                                                            <div className="flex items-center gap-2">
-                                                                <Lock className="w-4 h-4 text-blue-500" />
-                                                                <Label>Two-Factor Authentication</Label>
-                                                            </div>
-                                                            <p className="text-sm text-muted-foreground">
-                                                                Add an extra layer of security to your account
-                                                            </p>
-                                                        </div>
-                                                        <Switch
-                                                            checked={security.twoFactorAuth}
-                                                            onCheckedChange={(checked) => setSecurity({ ...security, twoFactorAuth: checked })}
-                                                        />
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-
-                                            {/* Login Alerts Card (Mocked) */}
-                                            <Card className="border-border">
-                                                <CardContent className="pt-6">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-0.5">
-                                                            <div className="flex items-center gap-2">
-                                                                <Shield className="w-4 h-4 text-green-500" />
-                                                                <Label>Login Alerts</Label>
-                                                            </div>
-                                                            <p className="text-sm text-muted-foreground">
-                                                                Get notified of new login attempts
-                                                            </p>
-                                                        </div>
-                                                        <Switch
-                                                            checked={security.loginAlerts}
-                                                            onCheckedChange={(checked) => setSecurity({ ...security, loginAlerts: checked })}
-                                                        />
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-
-                                            {/* CHANGE PASSWORD CARD (CONDITIONAL) */}
-                                            <Card className="border-border">
-                                                <CardHeader>
-                                                    <CardTitle>Change Password</CardTitle>
-                                                    <CardDescription>
-                                                        {isSocialLogin
-                                                            ? `You signed up with your ${profileData.provider} account. To change your password, you must use their security portal.`
-                                                            : "Update your password to keep your account secure."}
-                                                    </CardDescription>
-                                                </CardHeader>
-                                                <CardContent className="space-y-4">
-
-                                                    {isSocialLogin ? (
-                                                        <a
-                                                            href="https://myaccount.google.com/security"
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="flex items-center justify-center space-x-2 text-blue-500 hover:text-blue-600 transition-colors"
-                                                        >
-                                                            <span>Go to {profileData.provider} Security Settings</span>
-                                                            <ArrowRight className="w-4 h-4" />
-                                                        </a>
-                                                    ) : (
-                                                        // Password Inputs for Email/Password users
-                                                        <>
-                                                            <div className="space-y-2">
-                                                                <Label htmlFor="currentPassword">Current Password</Label>
-                                                                <Input
-                                                                    id="currentPassword"
-                                                                    type="password"
-                                                                    placeholder="Enter current password"
-                                                                    value={currentPassword}
-                                                                    onChange={(e) => setCurrentPassword(e.target.value)}
-                                                                    disabled={isPasswordChanging}
-                                                                    required
-                                                                />
-                                                            </div>
-                                                            <div className="space-y-2">
-                                                                <Label htmlFor="newPassword">New Password</Label>
-                                                                <Input
-                                                                    id="newPassword"
-                                                                    type="password"
-                                                                    placeholder="Enter new password"
-                                                                    value={newPassword}
-                                                                    onChange={(e) => setNewPassword(e.target.value)}
-                                                                    disabled={isPasswordChanging}
-                                                                    required
-                                                                />
-                                                            </div>
-                                                            <div className="space-y-2">
-                                                                <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                                                                <Input
-                                                                    id="confirmPassword"
-                                                                    type="password"
-                                                                    placeholder="Confirm new password"
-                                                                    value={confirmNewPassword}
-                                                                    onChange={(e) => setConfirmNewPassword(e.target.value)}
-                                                                    disabled={isPasswordChanging}
-                                                                    required
-                                                                />
-                                                            </div>
-                                                            <Button
-                                                                className="w-full bg-blue-600 hover:bg-blue-700"
-                                                                onClick={handleChangePassword}
-                                                                disabled={isPasswordChanging}
-                                                            >
-                                                                {isPasswordChanging ? (
-                                                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                                                ) : (
-                                                                    "Update Password"
-                                                                )}
-                                                            </Button>
-                                                        </>
-                                                    )}
-                                                </CardContent>
-                                            </Card>
-                                        </div>
-                                    </div>
-                                </TabsContent>
+                              
 
                                 {/* Integration Tab */}
                                 <TabsContent value="integration" className="mt-0" data-tour="integration-settings">

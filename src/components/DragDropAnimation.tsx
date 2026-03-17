@@ -110,7 +110,7 @@ export const DragDropAnimation: React.FC = () => {
 
       <div className="relative h-full flex">
         {/* Left Sidebar - Blocks Palette */}
-        <div className="w-52 bg-slate-900/60 backdrop-blur-md border-r border-violet-500/20">
+         <div className="w-52 bg-slate-900 border-r border-violet-500/20">
           {/* Header */}
           <div className="h-14 border-b border-violet-500/20 px-4 flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -203,7 +203,7 @@ export const DragDropAnimation: React.FC = () => {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col">
           {/* Top Bar */}
-          <div className="h-14 bg-slate-900/60 backdrop-blur-md border-b border-violet-500/20 flex items-center justify-between px-6">
+          <div className="h-14 bg-slate-900 border-b border-violet-500/20 flex items-center justify-between px-6">
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 bg-slate-800/50 rounded-lg p-1">
                 <button className="px-3 py-1.5 bg-violet-500/20 rounded text-xs text-violet-300 flex items-center space-x-1">
@@ -236,9 +236,9 @@ export const DragDropAnimation: React.FC = () => {
           </div>
 
           {/* Canvas Area */}
-          <div className="flex-1 relative overflow-hidden bg-slate-900/20">
+          <div className="flex-1 relative overflow-hidden bg-slate-900/70">
             <div className="absolute inset-0 p-8">
-              <div className="w-full h-full bg-slate-950/40 rounded-lg border-2 border-dashed border-violet-500/30 relative overflow-hidden">
+              <div className="w-full h-full bg-slate-950 rounded-lg border-2 border-dashed border-violet-500/30 relative overflow-hidden">
                 {/* Grid pattern */}
                 <div className="absolute inset-0 opacity-5" style={{
                   backgroundImage: `
@@ -342,7 +342,7 @@ export const DragDropAnimation: React.FC = () => {
             </div>
 
             {/* Bottom status bar */}
-            <div className="absolute bottom-0 left-0 right-0 h-8 bg-slate-900/80 backdrop-blur-sm border-t border-violet-500/20 flex items-center justify-between px-4">
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-slate-900 border-t border-violet-500/20 flex items-center justify-between px-4">
               <div className="flex items-center space-x-4 text-xs text-slate-500">
                 <div className="flex items-center space-x-1">
                   <Code className="w-3 h-3" />
@@ -373,7 +373,7 @@ export const DragDropAnimation: React.FC = () => {
             opacity: showProperties && placedComponents.length > 0 ? 1 : 0
           }}
           transition={{ duration: 0.3 }}
-          className="bg-slate-900/60 backdrop-blur-md border-l border-violet-500/20 overflow-hidden"
+          className="bg-slate-900 border-l border-violet-500/20 overflow-hidden"
         >
           <div className="w-70 p-4">
             {/* Tabs */}
