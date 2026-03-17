@@ -534,7 +534,7 @@ function AppRoutes({ editor }: { editor: EditorController }) {
           </>
         }
       />
-       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route
         path="/dashboard"
         element={
@@ -735,7 +735,10 @@ function AppRoutes({ editor }: { editor: EditorController }) {
           </>
         }
       />
+
       <Route path="*" element={<Navigate to="/" replace />} />
+
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
     </Routes>
   );
 }
