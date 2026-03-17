@@ -152,15 +152,9 @@ function useCollaborationLogic({
 
       if (duplicateIndices.length > 0) {
         console.warn(
-          `Detected ${duplicateIndices.length} duplicate components in Yjs. Cleaning up...`,
+          `Detected ${duplicateIndices.length} duplicate components in Yjs.`,
+          allComponents.map((c) => c.id),
         );
-        const { ydoc } = getOrInitDoc();
-        ydoc.transact(() => {
-          for (let i = duplicateIndices.length - 1; i >= 0; i--) {
-            yComponents.delete(duplicateIndices[i], 1);
-          }
-        }, "system");
-        return;
       }
 
       const isLocalChanges = consumeLocalChangeFlag();
@@ -413,11 +407,11 @@ function useCollaborationLogic({
             hasUnsavedChanges: false,
           };
         });
-} finally {
-  if (!cancelled) {
-    isHydratingRef.current = false;
-  }
-}
+      } finally {
+        if (!cancelled) {
+          isHydratingRef.current = false;
+        }
+      }
     })();
 
     return () => {
@@ -537,7 +531,10 @@ function useCollaborationLogic({
         const { yComponents } = getOrInitDoc();
         const currentComponents = yComponents.toArray();
 
-        console.log("[autosave] components to save:", currentComponents.map(c => ({ id: c.id, type: c.type })));
+        console.log(
+          "[autosave] components to save:",
+          currentComponents.map((c) => ({ id: c.id, type: c.type })),
+        );
 
         if (user_id) {
           const { error: saveError } = await saveProject({

@@ -91,16 +91,16 @@ export function initializeCollaborationTransport(
     }
   };
 
-  const handleDocUpdate = (_update: Uint8Array, origin: unknown) => {
+  const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote" || isClosed || !isReady) return;
 
-    pendingUpdates.push(_update);
+    pendingUpdates.push(update);
 
     if (updateTimeout) clearTimeout(updateTimeout);
     updateTimeout = setTimeout(() => {
       if (pendingUpdates.length === 0 || isClosed || !isReady) return;
 
-      const merged = Y.encodeStateAsUpdate(ydoc);
+      const merged = Y.mergeUpdates(pendingUpdates);
       void safePublish("yjs-update", encodeUpdate(merged));
       pendingUpdates = [];
     }, 30);
