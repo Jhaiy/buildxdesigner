@@ -1,5 +1,5 @@
 "use client";
-import { getBackendUrl } from '../utils/backendConfig';
+import { getBackendUrl } from "../utils/backendConfig";
 
 import type React from "react";
 import { useState, useEffect, useRef } from "react";
@@ -26,6 +26,7 @@ import {
   ArrowRight,
   FileText,
   Heart,
+  Flag,
   Store,
   Download,
   Check,
@@ -83,18 +84,25 @@ import {
   fetchDraftProjectsFromApi,
   fetchTrendingTemplatesFromApi,
   fetchTrashedProjectsFromApi,
+  insertTemplateFlagFromApi,
 } from "../utils/apiHelper";
+import { ReportTemplateModal } from "./FlagTemplateModal";
 // MarketplaceComponentModal removed — import happens inline on card click
 import { toast } from "sonner";
 import { importPublishedComponent } from "../supabase/data/publishedComponentService";
 import { deleteCustomComponent } from "../supabase/data/customComponentService";
 
-type DashboardSection = "new-chat" | "drafts" | "team" | "all" | "trash" | "marketplace";
+type DashboardSection =
+  | "new-chat"
+  | "drafts"
+  | "team"
+  | "all"
+  | "trash"
+  | "marketplace";
 
 const DASHBOARD_RETURN_SECTION_KEY = "dashboard_return_section";
 
 const backendUrl = getBackendUrl();
-
 
 interface DashboardProps {
   onCreateFromScratch: () => void;
@@ -404,22 +412,32 @@ export function Dashboard({
     TemplateCardData[]
   >([]);
   const [trendingLoading, setTrendingLoading] = useState(false);
+  const [showReportTemplateModal, setShowReportTemplateModal] = useState(false);
+  const [selectedReportTemplate, setSelectedReportTemplate] =
+    useState<TemplateCardData | null>(null);
 
   const [marketplaceComponents, setMarketplaceComponents] = useState<any[]>([]);
   const [marketplaceLoading, setMarketplaceLoading] = useState(false);
   const [marketplaceSearch, setMarketplaceSearch] = useState("");
-  const [marketplaceApiBase, setMarketplaceApiBase] = useState<string | null>(null);
+  const [marketplaceApiBase, setMarketplaceApiBase] = useState<string | null>(
+    null,
+  );
   const [isImporting, setIsImporting] = useState(false);
   const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
-  const [selectedComponentForImport, setSelectedComponentForImport] = useState<any>(null);
-  
+  const [selectedComponentForImport, setSelectedComponentForImport] =
+    useState<any>(null);
+
   const [showMyComponentsModal, setShowMyComponentsModal] = useState(false);
   const [userCustomComponents, setUserCustomComponents] = useState<any[]>([]);
-  const [userImportedComponents, setUserImportedComponents] = useState<any[]>([]);
+  const [userImportedComponents, setUserImportedComponents] = useState<any[]>(
+    [],
+  );
   const [myComponentsLoading, setMyComponentsLoading] = useState(false);
-  
-  const [showDeleteComponentDialog, setShowDeleteComponentDialog] = useState(false);
-  const [pendingDeleteComponent, setPendingDeleteComponent] = useState<any>(null);
+
+  const [showDeleteComponentDialog, setShowDeleteComponentDialog] =
+    useState(false);
+  const [pendingDeleteComponent, setPendingDeleteComponent] =
+    useState<any>(null);
 
   useEffect(() => {
     if (activeSection === "marketplace") {
@@ -1924,15 +1942,15 @@ export function Dashboard({
 
     try {
       setIsImporting(true);
-      
+
       let targetProjectId: string;
-      
+
       const { data: userProjects, error: projectsError } = await supabase
         .from("projects")
         .select("projects_id")
         .eq("user_id", currentUserId)
         .limit(1);
-      
+
       if (projectsError || !userProjects || userProjects.length === 0) {
         const { data: newProject, error: createError } = await supabase
           .from("projects")
@@ -1941,48 +1959,46 @@ export function Dashboard({
             name: "My Components",
             description: "My personal component library",
             category: "Other",
-            status: "draft"
+            status: "draft",
           })
           .select("projects_id")
           .single();
-        
+
         if (createError || !newProject) {
           throw new Error("Failed to create a project for your components.");
         }
-        
+
         targetProjectId = newProject.projects_id;
       } else {
         targetProjectId = userProjects[0].projects_id;
       }
 
-      const { data, error } = await importPublishedComponent(
-        targetProjectId,
-        {
-          name: selectedComponentForImport.name,
-          component_json: {
-            ...selectedComponentForImport.component_json,
-            props: {
-              ...selectedComponentForImport.component_json?.props,
-              importedFrom: true,
-              original_creator_id: selectedComponentForImport.user_id,
-              marketplaceId: selectedComponentForImport.id,
-              imported_at: new Date().toISOString()
-            }
-          }
-        }
-      );
+      const { data, error } = await importPublishedComponent(targetProjectId, {
+        name: selectedComponentForImport.name,
+        component_json: {
+          ...selectedComponentForImport.component_json,
+          props: {
+            ...selectedComponentForImport.component_json?.props,
+            importedFrom: true,
+            original_creator_id: selectedComponentForImport.user_id,
+            marketplaceId: selectedComponentForImport.id,
+            imported_at: new Date().toISOString(),
+          },
+        },
+      });
 
       if (error) {
         throw error;
       }
 
-      toast.success(`"${selectedComponentForImport.name}" has been imported to your components!`);
-      
+      toast.success(
+        `"${selectedComponentForImport.name}" has been imported to your components!`,
+      );
+
       await fetchUserCustomComponents();
-      
+
       setShowImportConfirmDialog(false);
       setSelectedComponentForImport(null);
-      
     } catch (error) {
       console.error("Failed to import component:", error);
       toast.error("Failed to import component. Please try again.");
@@ -2016,16 +2032,18 @@ export function Dashboard({
         return;
       }
 
-      const projectIds = userProjects.map(p => p.projects_id);
+      const projectIds = userProjects.map((p) => p.projects_id);
 
       const { data: allComponents, error: componentsError } = await supabase
         .from("custom_components")
-        .select(`
+        .select(
+          `
           *,
           projects!inner(
             user_id
           )
-        `)
+        `,
+        )
         .in("project_id", projectIds)
         .order("created_at", { ascending: false });
 
@@ -2039,20 +2057,21 @@ export function Dashboard({
       if (allComponents) {
         for (const component of allComponents) {
           const componentData = component.component_json;
-          const isImported = componentData?.props?.importedFrom || 
-                           componentData?.marketplaceId ||
-                           componentData?.original_creator_id !== currentUserId;
-          
+          const isImported =
+            componentData?.props?.importedFrom ||
+            componentData?.marketplaceId ||
+            componentData?.original_creator_id !== currentUserId;
+
           if (isImported) {
             imported.push({
               ...component,
               imported: true,
-              original_creator_id: componentData?.original_creator_id
+              original_creator_id: componentData?.original_creator_id,
             });
           } else {
             created.push({
               ...component,
-              imported: false
+              imported: false,
             });
           }
         }
@@ -2060,7 +2079,6 @@ export function Dashboard({
 
       setUserImportedComponents(imported);
       setUserCustomComponents(created);
-
     } catch (error) {
       console.error("Failed to fetch user components:", error);
       toast.error("Failed to load your components.");
@@ -2081,18 +2099,17 @@ export function Dashboard({
 
     try {
       const { error } = await deleteCustomComponent(pendingDeleteComponent.id);
-      
+
       if (error) {
         throw error;
       }
 
       toast.success(`"${pendingDeleteComponent.name}" has been deleted.`);
-      
+
       setShowDeleteComponentDialog(false);
       setPendingDeleteComponent(null);
-      
+
       await fetchUserCustomComponents();
-      
     } catch (error) {
       console.error("Failed to delete component:", error);
       toast.error("Failed to delete component. Please try again.");
@@ -2100,10 +2117,11 @@ export function Dashboard({
   };
 
   const isComponentImported = (componentId: string) => {
-    return userImportedComponents.some(cc => 
-      cc.component_json?.props?.marketplaceId === componentId ||
-      cc.component_json?.props?.importedFrom === true && 
-      cc.component_json?.props?.marketplaceId === componentId
+    return userImportedComponents.some(
+      (cc) =>
+        cc.component_json?.props?.marketplaceId === componentId ||
+        (cc.component_json?.props?.importedFrom === true &&
+          cc.component_json?.props?.marketplaceId === componentId),
     );
   };
 
@@ -2433,6 +2451,7 @@ export function Dashboard({
   return (
     // Use flex h-screen and allow page scrolling so gallery and bottom content are reachable
     <div className="dashboard-gradient-surface flex h-screen overflow-auto">
+      <Toaster position="bottom-right" />
       {/* Mobile Overlay */}
       {sidebarVisible && (
         <div
@@ -2759,10 +2778,7 @@ export function Dashboard({
                                       </span>
                                     </div>
 
-                                    <div
-                                      className="flex items-center gap-3"
-                                      data-tour="template-like-button"
-                                    >
+                                    <div className="flex items-center gap-3">
                                       <button
                                         type="button"
                                         onClick={(event) =>
@@ -2773,14 +2789,35 @@ export function Dashboard({
                                             getTemplateLikeKey(template)
                                           ]
                                         }
-                                        className={`flex items-center gap-1 transition-colors ${isTemplateLiked(template) ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}
+                                        className={`flex items-center gap-1 transition-colors ${
+                                          isTemplateLiked(template)
+                                            ? "text-red-500"
+                                            : "text-muted-foreground hover:text-red-500"
+                                        }`}
                                       >
                                         <Heart
-                                          className={`w-4 h-4 ${isTemplateLiked(template) ? "fill-red-500 text-red-500" : ""}`}
+                                          className={`w-4 h-4 ${
+                                            isTemplateLiked(template)
+                                              ? "fill-red-500 text-red-500"
+                                              : ""
+                                          }`}
                                         />
                                         <span className="text-xs">
                                           {getTemplateLikeCount(template)}
                                         </span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setSelectedReportTemplate(template);
+                                          setShowReportTemplateModal(true);
+                                        }}
+                                        className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-red-500"
+                                        aria-label={`Report ${template.name}`}
+                                      >
+                                        <Flag className="w-4 h-4" />
                                       </button>
                                     </div>
                                   </div>
@@ -2883,6 +2920,19 @@ export function Dashboard({
                                       {getTemplateLikeCount(template)}
                                     </span>
                                   </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setSelectedReportTemplate(template);
+                                      setShowReportTemplateModal(true);
+                                    }}
+                                    className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-red-500"
+                                    aria-label={`Report ${template.name}`}
+                                  >
+                                    <Flag className="w-4 h-4" />
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -2899,84 +2949,109 @@ export function Dashboard({
               </>
             ) : activeSection === "marketplace" ? (
               <>
-           <div className="flex flex-col min-h-[calc(100vh-200px)]">
-              <div className="flex-1 px-4 pb-8 pt-0">
-                <div className="w-full max-w-7xl mx-auto">
-                  <div className="mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-                        <Store className="w-6 h-6 text-primary" />
-                        Components Marketplace
-                      </h2>
-                    </div>
-
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                        <Input
-                          placeholder="Search components..."
-                          value={marketplaceSearch}
-                          onChange={(e) => setMarketplaceSearch(e.target.value)}
-                          className="pl-9 h-9 bg-background border-border"
-                        />
-                      </div>
-                      <div className="ml-auto">
-                        <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="gap-2"
-                        onClick={() => {
-                          setShowMyComponentsModal(true);
-                          fetchUserCustomComponents();
-                        }}
-                      >
-                          <Library className="w-4 h-4" />
-                          My Components
-                        </Button>
-                      </div>
-                    </div>
-
-                    {marketplaceLoading ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
-                        {Array.from({ length: 6 }).map((_, i) => (
-                          <div key={i} className="rounded-xl border border-border bg-card overflow-hidden">
-                            <Skeleton className="aspect-[4/3] w-full" />
-                            <div className="p-4">
-                              <Skeleton width="70%" height={18} />
-                              <Skeleton width="100%" height={14} className="mt-2" />
-                              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
-                                <Skeleton circle width={24} height={24} />
-                                <Skeleton width={80} height={12} />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (() => {
-                      const filtered = marketplaceComponents.filter(c =>
-                        c.name?.toLowerCase().includes(marketplaceSearch.toLowerCase()) ||
-                        c.description?.toLowerCase().includes(marketplaceSearch.toLowerCase()) ||
-                        c.creator_name?.toLowerCase().includes(marketplaceSearch.toLowerCase())
-                      );
-                      return filtered.length === 0 ? (
-                        <div className="col-span-full rounded-xl border border-dashed border-border p-12 text-center text-muted-foreground">
-                          <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                          <p className="font-semibold text-base">{marketplaceSearch ? 'No components match your search' : 'No components published yet'}</p>
-                          <p className="text-sm mt-1">{marketplaceSearch ? 'Try different keywords' : 'Be the first to publish one!'}</p>
+                <div className="flex flex-col min-h-[calc(100vh-200px)]">
+                  <div className="flex-1 px-4 pb-8 pt-0">
+                    <div className="w-full max-w-7xl mx-auto">
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+                            <Store className="w-6 h-6 text-primary" />
+                            Components Marketplace
+                          </h2>
                         </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
-                          {filtered.map((comp) => (
-                            <div
-                              key={comp.id}
-                              className="theme-interactive-card group relative rounded-xl overflow-hidden border border-border bg-card hover:shadow-lg transition-all cursor-pointer flex flex-col h-full"
+
+                        <div className="flex items-center gap-3 mb-6">
+                          <div className="relative flex-1 max-w-md">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                            <Input
+                              placeholder="Search components..."
+                              value={marketplaceSearch}
+                              onChange={(e) =>
+                                setMarketplaceSearch(e.target.value)
+                              }
+                              className="pl-9 h-9 bg-background border-border"
+                            />
+                          </div>
+                          <div className="ml-auto">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-2"
+                              onClick={() => {
+                                setShowMyComponentsModal(true);
+                                fetchUserCustomComponents();
+                              }}
                             >
-                              {/* PREVIEW BOX: Using zoom to force content to fit */}
-                              <div className="relative flex-1 bg-white dark:bg-slate-950 aspect-[4/3] overflow-hidden flex items-center justify-center p-2">
-                                <style>
-                                  {`
+                              <Library className="w-4 h-4" />
+                              My Components
+                            </Button>
+                          </div>
+                        </div>
+
+                        {marketplaceLoading ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
+                            {Array.from({ length: 6 }).map((_, i) => (
+                              <div
+                                key={i}
+                                className="rounded-xl border border-border bg-card overflow-hidden"
+                              >
+                                <Skeleton className="aspect-[4/3] w-full" />
+                                <div className="p-4">
+                                  <Skeleton width="70%" height={18} />
+                                  <Skeleton
+                                    width="100%"
+                                    height={14}
+                                    className="mt-2"
+                                  />
+                                  <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
+                                    <Skeleton circle width={24} height={24} />
+                                    <Skeleton width={80} height={12} />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          (() => {
+                            const filtered = marketplaceComponents.filter(
+                              (c) =>
+                                c.name
+                                  ?.toLowerCase()
+                                  .includes(marketplaceSearch.toLowerCase()) ||
+                                c.description
+                                  ?.toLowerCase()
+                                  .includes(marketplaceSearch.toLowerCase()) ||
+                                c.creator_name
+                                  ?.toLowerCase()
+                                  .includes(marketplaceSearch.toLowerCase()),
+                            );
+                            return filtered.length === 0 ? (
+                              <div className="col-span-full rounded-xl border border-dashed border-border p-12 text-center text-muted-foreground">
+                                <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                                <p className="font-semibold text-base">
+                                  {marketplaceSearch
+                                    ? "No components match your search"
+                                    : "No components published yet"}
+                                </p>
+                                <p className="text-sm mt-1">
+                                  {marketplaceSearch
+                                    ? "Try different keywords"
+                                    : "Be the first to publish one!"}
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
+                                {filtered.map((comp) => (
+                                  <div
+                                    key={comp.id}
+                                    className="theme-interactive-card group relative rounded-xl overflow-hidden border border-border bg-card hover:shadow-lg transition-all cursor-pointer flex flex-col h-full"
+                                  >
+                                    {/* PREVIEW BOX: Using zoom to force content to fit */}
+                                    <div className="relative flex-1 bg-white dark:bg-slate-950 aspect-[4/3] overflow-hidden flex items-center justify-center p-2">
+                                      <style>
+                                        {`
                                     .preview-container-${comp.id} {
-                                      ${comp.component_json?.props?.css || ''}
+                                      ${comp.component_json?.props?.css || ""}
                                       width: 100%;
                                       display: flex;
                                       justify-content: center;
@@ -2993,74 +3068,89 @@ export function Dashboard({
                                       height: max-content;
                                     }
                                   `}
-                                </style>
+                                      </style>
 
-                                <div className={`preview-container-${comp.id} w-full h-full`}>
-                                  <div 
-                                    className={`inner-scaler-${comp.id}`}
-                                    dangerouslySetInnerHTML={{ 
-                                      __html: comp.component_json?.props?.html || '' 
-                                    }} 
-                                  />
-                                </div>
-                                
-                                <div className="absolute inset-0 pointer-events-none border-b border-border/10 shadow-inner" />
-                              </div>
-
-                              <div className="px-4 py-3 border-t border-border/40 bg-card">
-                                <div className="flex items-center justify-between gap-3">
-                                  <h5 className="text-[13px] font-semibold text-foreground/90 truncate flex-1">
-                                    {comp.name}
-                                  </h5>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <button className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors group/heart">
-                                      <Heart className="w-4 h-4 text-muted-foreground group-hover/heart:text-red-500 transition-colors" />
-                                    </button>
-                                    {isComponentImported(comp.id) ? (
-                                      <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-full">
-                                        <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                      </div>
-                                    ) : (
-                                      <button 
-                                        className="p-1.5 hover:bg-primary/10 rounded-full transition-colors group/import"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedComponentForImport(comp);
-                                          setShowImportConfirmDialog(true);
-                                        }}
+                                      <div
+                                        className={`preview-container-${comp.id} w-full h-full`}
                                       >
-                                        <Download className="w-4 h-4 text-muted-foreground group-hover/import:text-primary transition-colors" />
-                                      </button>
-                                    )}
+                                        <div
+                                          className={`inner-scaler-${comp.id}`}
+                                          dangerouslySetInnerHTML={{
+                                            __html:
+                                              comp.component_json?.props
+                                                ?.html || "",
+                                          }}
+                                        />
+                                      </div>
+
+                                      <div className="absolute inset-0 pointer-events-none border-b border-border/10 shadow-inner" />
+                                    </div>
+
+                                    <div className="px-4 py-3 border-t border-border/40 bg-card">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <h5 className="text-[13px] font-semibold text-foreground/90 truncate flex-1">
+                                          {comp.name}
+                                        </h5>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          <button className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors group/heart">
+                                            <Heart className="w-4 h-4 text-muted-foreground group-hover/heart:text-red-500 transition-colors" />
+                                          </button>
+                                          {isComponentImported(comp.id) ? (
+                                            <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-full">
+                                              <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                            </div>
+                                          ) : (
+                                            <button
+                                              className="p-1.5 hover:bg-primary/10 rounded-full transition-colors group/import"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedComponentForImport(
+                                                  comp,
+                                                );
+                                                setShowImportConfirmDialog(
+                                                  true,
+                                                );
+                                              }}
+                                            >
+                                              <Download className="w-4 h-4 text-muted-foreground group-hover/import:text-primary transition-colors" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center justify-between mt-2">
+                                        <div className="flex items-center gap-2">
+                                          <Avatar className="w-5 h-5 border border-border/50">
+                                            <AvatarImage
+                                              src={comp.creator_avatar || ""}
+                                            />
+                                            <AvatarFallback className="text-[8px] bg-primary/10 text-primary uppercase">
+                                              {(
+                                                comp.creator_name || "A"
+                                              ).substring(0, 2)}
+                                            </AvatarFallback>
+                                          </Avatar>
+                                          <span className="text-[11px] font-medium text-muted-foreground truncate max-w-md">
+                                            {comp.creator_name}
+                                          </span>
+                                        </div>
+                                        <span className="text-[10px] text-muted-foreground/60">
+                                          {new Date(
+                                            comp.created_at,
+                                          ).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                                
-                                <div className="flex items-center justify-between mt-2">
-                                  <div className="flex items-center gap-2">
-                                    <Avatar className="w-5 h-5 border border-border/50">
-                                      <AvatarImage src={comp.creator_avatar || ""} />
-                                      <AvatarFallback className="text-[8px] bg-primary/10 text-primary uppercase">
-                                        {(comp.creator_name || 'A').substring(0, 2)}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <span className="text-[11px] font-medium text-muted-foreground truncate max-w-md">
-                                      {comp.creator_name}
-                                    </span>
-                                  </div>
-                                  <span className="text-[10px] text-muted-foreground/60">
-                                    {new Date(comp.created_at).toLocaleDateString()}
-                                  </span>
-                                </div>
+                                ))}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
+                            );
+                          })()
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
               </>
             ) : activeSection === "all" ||
               activeSection === "drafts" ||
@@ -4198,6 +4288,51 @@ export function Dashboard({
         initialTemplateId={selectedTemplateId} // Pass selectedTemplateId as initialTemplateId
       />
 
+      <ReportTemplateModal
+        isOpen={showReportTemplateModal}
+        onClose={() => {
+          setShowReportTemplateModal(false);
+          setSelectedReportTemplate(null);
+        }}
+        templateName={selectedReportTemplate?.name}
+        onSubmit={async ({ category, reason }) => {
+          if (!currentUserId) {
+            throw new Error("Please log in to report templates.");
+          }
+
+          const projectId = String(
+            selectedReportTemplate?.projectId ??
+              selectedReportTemplate?.id ??
+              "",
+          ).trim();
+
+          if (!projectId) {
+            throw new Error("Template identifier is missing.");
+          }
+
+          try {
+            await insertTemplateFlagFromApi({
+              projectId,
+              userId: currentUserId,
+              reason,
+              category,
+            });
+
+            toast.success("Report submitted successfully.");
+            setShowReportTemplateModal(false);
+            setSelectedReportTemplate(null);
+          } catch (error) {
+            console.error("Failed to report template:", error);
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Failed to submit report.",
+            );
+            throw error;
+          }
+        }}
+      />
+
       <GettingStartedModal
         isOpen={showGettingStartedModal}
         onClose={() => setShowGettingStartedModal(false)}
@@ -4260,7 +4395,9 @@ export function Dashboard({
           <DialogHeader>
             <DialogTitle>Import to My Components?</DialogTitle>
             <DialogDescription>
-              Add "{selectedComponentForImport?.name || 'this component'}" to your personal component library. You'll be able to use it in your projects.
+              Add "{selectedComponentForImport?.name || "this component"}" to
+              your personal component library. You'll be able to use it in your
+              projects.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex justify-end">
@@ -4295,7 +4432,8 @@ export function Dashboard({
           <DialogHeader>
             <DialogTitle>My Components</DialogTitle>
             <DialogDescription>
-              Manage your personal component library - both created and imported components
+              Manage your personal component library - both created and imported
+              components
             </DialogDescription>
           </DialogHeader>
 
@@ -4315,8 +4453,13 @@ export function Dashboard({
                   {userImportedComponents.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
                       <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                      <p className="font-semibold">No imported components yet</p>
-                      <p className="text-sm mt-1">Browse the marketplace and import components to get started</p>
+                      <p className="font-semibold">
+                        No imported components yet
+                      </p>
+                      <p className="text-sm mt-1">
+                        Browse the marketplace and import components to get
+                        started
+                      </p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -4330,7 +4473,7 @@ export function Dashboard({
                             <style>
                               {`
                                 .preview-container-${comp.id} {
-                                  ${comp.component_json?.props?.css || ''}
+                                  ${comp.component_json?.props?.css || ""}
                                   width: 100%;
                                   display: flex;
                                   justify-content: center;
@@ -4346,12 +4489,15 @@ export function Dashboard({
                                 }
                               `}
                             </style>
-                            <div className={`preview-container-${comp.id} w-full h-full`}>
-                              <div 
+                            <div
+                              className={`preview-container-${comp.id} w-full h-full`}
+                            >
+                              <div
                                 className={`inner-scaler-${comp.id}`}
-                                dangerouslySetInnerHTML={{ 
-                                  __html: comp.component_json?.props?.html || '' 
-                                }} 
+                                dangerouslySetInnerHTML={{
+                                  __html:
+                                    comp.component_json?.props?.html || "",
+                                }}
                               />
                             </div>
                             <div className="absolute top-2 right-2">
@@ -4367,7 +4513,7 @@ export function Dashboard({
                               <h5 className="text-[13px] font-semibold text-foreground/90 truncate flex-1">
                                 {comp.name}
                               </h5>
-                              <button 
+                              <button
                                 className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -4379,7 +4525,8 @@ export function Dashboard({
                             </div>
                             <div className="flex items-center justify-between mt-2">
                               <span className="text-[10px] text-muted-foreground/60">
-                                Imported {new Date(comp.created_at).toLocaleDateString()}
+                                Imported{" "}
+                                {new Date(comp.created_at).toLocaleDateString()}
                               </span>
                             </div>
                           </div>
@@ -4399,7 +4546,10 @@ export function Dashboard({
                     <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
                       <Code2 className="w-12 h-12 mx-auto mb-4 opacity-30" />
                       <p className="font-semibold">No created components yet</p>
-                      <p className="text-sm mt-1">Start creating your own custom components in your projects</p>
+                      <p className="text-sm mt-1">
+                        Start creating your own custom components in your
+                        projects
+                      </p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -4413,7 +4563,7 @@ export function Dashboard({
                             <style>
                               {`
                                 .preview-container-${comp.id} {
-                                  ${comp.component_json?.props?.css || ''}
+                                  ${comp.component_json?.props?.css || ""}
                                   width: 100%;
                                   display: flex;
                                   justify-content: center;
@@ -4429,12 +4579,15 @@ export function Dashboard({
                                 }
                               `}
                             </style>
-                            <div className={`preview-container-${comp.id} w-full h-full`}>
-                              <div 
+                            <div
+                              className={`preview-container-${comp.id} w-full h-full`}
+                            >
+                              <div
                                 className={`inner-scaler-${comp.id}`}
-                                dangerouslySetInnerHTML={{ 
-                                  __html: comp.component_json?.props?.html || '' 
-                                }} 
+                                dangerouslySetInnerHTML={{
+                                  __html:
+                                    comp.component_json?.props?.html || "",
+                                }}
                               />
                             </div>
                             <div className="absolute top-2 right-2">
@@ -4450,7 +4603,7 @@ export function Dashboard({
                               <h5 className="text-[13px] font-semibold text-foreground/90 truncate flex-1">
                                 {comp.name}
                               </h5>
-                              <button 
+                              <button
                                 className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -4462,7 +4615,8 @@ export function Dashboard({
                             </div>
                             <div className="flex items-center justify-between mt-2">
                               <span className="text-[10px] text-muted-foreground/60">
-                                Created {new Date(comp.created_at).toLocaleDateString()}
+                                Created{" "}
+                                {new Date(comp.created_at).toLocaleDateString()}
                               </span>
                             </div>
                           </div>
@@ -4498,7 +4652,8 @@ export function Dashboard({
           <DialogHeader>
             <DialogTitle>Delete component forever?</DialogTitle>
             <DialogDescription>
-              This will permanently delete "{pendingDeleteComponent?.name || "this component"}". This action
+              This will permanently delete "
+              {pendingDeleteComponent?.name || "this component"}". This action
               cannot be undone.
             </DialogDescription>
           </DialogHeader>
@@ -4512,10 +4667,7 @@ export function Dashboard({
             >
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteComponent}
-            >
+            <Button variant="destructive" onClick={handleDeleteComponent}>
               Delete forever
             </Button>
           </DialogFooter>

@@ -127,3 +127,32 @@ export async function sendPasswordResetEmail(email: string) {
 
   return await supabase.auth.resetPasswordForEmail(email, { redirectTo });
 }
+
+export async function insertTemplateFlagFromApi(params: {
+  projectId: string;
+  userId: string;
+  reason: string;
+  category: string;
+}) {
+  const apiBaseUrl = getApiBaseUrl();
+
+  const response = await fetch(`${apiBaseUrl}/api/insert-flag`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(params),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.details ||
+        data?.error ||
+        `Failed to insert flag: ${response.status}`,
+    );
+  }
+
+  return data;
+}
