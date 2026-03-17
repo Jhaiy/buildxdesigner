@@ -25,6 +25,7 @@ import {
   ArrowRight,
   FileText,
   Heart,
+  Flag,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -74,7 +75,10 @@ import {
   fetchDraftProjectsFromApi,
   fetchTrendingTemplatesFromApi,
   fetchTrashedProjectsFromApi,
+  insertTemplateFlagFromApi,
 } from "../utils/apiHelper";
+import { ReportTemplateModal } from "./FlagTemplateModal";
+import toast, { Toaster } from "react-hot-toast";
 
 type DashboardSection = "new-chat" | "drafts" | "team" | "all" | "trash";
 
@@ -388,6 +392,9 @@ export function Dashboard({
     TemplateCardData[]
   >([]);
   const [trendingLoading, setTrendingLoading] = useState(false);
+  const [showReportTemplateModal, setShowReportTemplateModal] = useState(false);
+  const [selectedReportTemplate, setSelectedReportTemplate] =
+    useState<TemplateCardData | null>(null);
 
   useEffect(() => {
     const openSettingsTab = localStorage.getItem("open_account_settings");
@@ -2181,6 +2188,7 @@ export function Dashboard({
   return (
     // Use flex h-screen and allow page scrolling so gallery and bottom content are reachable
     <div className="dashboard-gradient-surface flex h-screen overflow-auto">
+      <Toaster position="bottom-right" />
       {/* Mobile Overlay */}
       {sidebarVisible && (
         <div
@@ -2494,10 +2502,7 @@ export function Dashboard({
                                       </span>
                                     </div>
 
-                                    <div
-                                      className="flex items-center gap-3"
-                                      data-tour="template-like-button"
-                                    >
+                                    <div className="flex items-center gap-3">
                                       <button
                                         type="button"
                                         onClick={(event) =>
@@ -2508,14 +2513,35 @@ export function Dashboard({
                                             getTemplateLikeKey(template)
                                           ]
                                         }
-                                        className={`flex items-center gap-1 transition-colors ${isTemplateLiked(template) ? "text-red-500" : "text-muted-foreground hover:text-red-500"}`}
+                                        className={`flex items-center gap-1 transition-colors ${
+                                          isTemplateLiked(template)
+                                            ? "text-red-500"
+                                            : "text-muted-foreground hover:text-red-500"
+                                        }`}
                                       >
                                         <Heart
-                                          className={`w-4 h-4 ${isTemplateLiked(template) ? "fill-red-500 text-red-500" : ""}`}
+                                          className={`w-4 h-4 ${
+                                            isTemplateLiked(template)
+                                              ? "fill-red-500 text-red-500"
+                                              : ""
+                                          }`}
                                         />
                                         <span className="text-xs">
                                           {getTemplateLikeCount(template)}
                                         </span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setSelectedReportTemplate(template);
+                                          setShowReportTemplateModal(true);
+                                        }}
+                                        className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-red-500"
+                                        aria-label={`Report ${template.name}`}
+                                      >
+                                        <Flag className="w-4 h-4" />
                                       </button>
                                     </div>
                                   </div>
@@ -2617,6 +2643,19 @@ export function Dashboard({
                                     <span className="text-xs">
                                       {getTemplateLikeCount(template)}
                                     </span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setSelectedReportTemplate(template);
+                                      setShowReportTemplateModal(true);
+                                    }}
+                                    className="flex items-center gap-1 text-muted-foreground transition-colors hover:text-red-500"
+                                    aria-label={`Report ${template.name}`}
+                                  >
+                                    <Flag className="w-4 h-4" />
                                   </button>
                                 </div>
                               </div>
@@ -3766,6 +3805,51 @@ export function Dashboard({
         onTrackSearch={() => {}}
         recommendedTemplates={visibleRecommendedTemplates}
         initialTemplateId={selectedTemplateId} // Pass selectedTemplateId as initialTemplateId
+      />
+
+      <ReportTemplateModal
+        isOpen={showReportTemplateModal}
+        onClose={() => {
+          setShowReportTemplateModal(false);
+          setSelectedReportTemplate(null);
+        }}
+        templateName={selectedReportTemplate?.name}
+        onSubmit={async ({ category, reason }) => {
+          if (!currentUserId) {
+            throw new Error("Please log in to report templates.");
+          }
+
+          const projectId = String(
+            selectedReportTemplate?.projectId ??
+              selectedReportTemplate?.id ??
+              "",
+          ).trim();
+
+          if (!projectId) {
+            throw new Error("Template identifier is missing.");
+          }
+
+          try {
+            await insertTemplateFlagFromApi({
+              projectId,
+              userId: currentUserId,
+              reason,
+              category,
+            });
+
+            toast.success("Report submitted successfully.");
+            setShowReportTemplateModal(false);
+            setSelectedReportTemplate(null);
+          } catch (error) {
+            console.error("Failed to report template:", error);
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Failed to submit report.",
+            );
+            throw error;
+          }
+        }}
       />
 
       <GettingStartedModal
