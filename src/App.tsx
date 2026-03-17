@@ -545,52 +545,56 @@ function AppRoutes({ editor }: { editor: EditorController }) {
       <Route
         path="/dashboard"
         element={
-          <Dashboard
-            onCreateFromScratch={createFromScratch}
-            onOpenTemplates={toggleTemplates}
-            onOpenAIGenerator={() =>
-              setState((prev) => ({
-                ...prev,
-                showAIGenerator: !prev.showAIGenerator,
-              }))
-            }
-            onOpenProject={openProjectAndRoute}
-            onLogout={goToLanding}
-            theme={state.theme}
-            onThemeChange={handleThemeChange}
-            onLoadTemplate={(components) => {
-              const centerX = 500;
-              const centerY = 300;
-              let currentY = centerY;
+          <>
+            <Dashboard
+              onCreateFromScratch={createFromScratch}
+              onOpenTemplates={toggleTemplates}
+              onOpenAIGenerator={() =>
+                setState((prev) => ({
+                  ...prev,
+                  showAIGenerator: !prev.showAIGenerator,
+                }))
+              }
+              onOpenProject={openProjectAndRoute}
+              onLogout={goToLanding}
+              theme={state.theme}
+              onThemeChange={handleThemeChange}
+              onLoadTemplate={(components) => {
+                const centerX = 500;
+                const centerY = 300;
+                let currentY = centerY;
 
-              const positionedComponents = components.map((comp) => {
-                const height =
-                  Number.parseFloat(
-                    String(comp.style?.height || "100").replace("px", ""),
-                  ) || 100;
-                const width =
-                  Number.parseFloat(
-                    String(comp.style?.width || "600").replace("px", ""),
-                  ) || 600;
+                const positionedComponents = components.map((comp) => {
+                  const height =
+                    Number.parseFloat(
+                      String(comp.style?.height || "100").replace("px", ""),
+                    ) || 100;
+                  const width =
+                    Number.parseFloat(
+                      String(comp.style?.width || "100").replace("px", ""),
+                    ) || 100;
 
-                const position = comp.position || {
-                  x: centerX - width / 2,
-                  y: currentY,
-                };
-                currentY += height + 20;
+                  return {
+                    ...comp,
+                    position: {
+                      x: centerX - width / 2,
+                      y: currentY,
+                    },
+                  };
+                  currentY += height + 20;
+                });
 
-                return { ...comp, position };
-              });
-
-              setState((prev) => ({
-                ...prev,
-                components: positionedComponents,
-                currentView: "editor",
-                currentPage: "editor",
-                hasUnsavedChanges: true,
-              }));
-            }}
-          />
+                setState((prev) => ({
+                  ...prev,
+                  components: positionedComponents,
+                  currentView: "editor",
+                  currentPage: "editor",
+                  hasUnsavedChanges: true,
+                }));
+              }}
+            />
+            <Toaster />
+          </>
         }
       />
       <Route

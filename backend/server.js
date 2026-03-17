@@ -754,6 +754,51 @@ app.get("/api/project-likes", async (req, res) => {
   }
 });
 
+// ── Components Marketplace ──────────────────────────────────────────────────
+app.get("/api/marketplace/components", async (req, res) => {
+  const headers = getSupabaseRestHeaders();
+  if (!headers) {
+    return res.status(500).json({
+      error: "Server misconfiguration: Supabase keys are missing.",
+    });
+  }
+
+  try {
+    const response = await axios.get(
+      `${SUPABASE_URL}/rest/v1/published_components?select=id,name,description,component_json,created_at,user_id,profiles(full_name,avatar_url)&order=created_at.desc`,
+      { headers },
+    );
+
+    const components = Array.isArray(response.data) ? response.data : [];
+
+    const normalized = components.map((comp) => {
+      const profile = Array.isArray(comp.profiles) ? comp.profiles[0] : comp.profiles;
+      
+      return {
+        id: comp.id,
+        name: comp.name,
+        description: comp.description || "",
+        component_json: comp.component_json,
+        created_at: comp.created_at,
+        user_id: comp.user_id,
+        creator_name: profile?.full_name || "Anonymous",
+        creator_avatar: profile?.avatar_url || null,
+      };
+    });
+
+    res.json(normalized);
+  } catch (error) {
+    console.error(
+      "Fetch marketplace components error:",
+      error.response?.data || error.message,
+    );
+    res.status(500).json({
+      error: "Failed to fetch marketplace components.",
+      details: error.response?.data || error.message,
+    });
+  }
+});
+
 // Resend Email Proxy Endpoint
 app.post("/api/send-email", async (req, res) => {
   const { resendApiKey, to, subject, html, from, projectId, replyTo } = req.body;

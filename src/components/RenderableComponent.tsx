@@ -23,6 +23,7 @@ import 'datatables.net-responsive-dt';
 import 'datatables.net-responsive-dt/css/responsive.dataTables.css';
 import { toast } from 'sonner';
 import { validateForm, sendFormEmail } from "../utils/formEmailUtils";
+import { scopeCss } from '../utils/cssUtils';
 import {
   Dialog,
   DialogContent,
@@ -1148,10 +1149,28 @@ export function RenderableComponent({
     }
   };
 
+  const processHtml = (html: string, prefix: string) => {
+    if (!html) return '';
+    
+    let processed = html
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/<\/?html[^>]*>/gi, '')
+      .replace(/<\/?head[^>]*>/gi, '')
+      .replace(/<\/?body[^>]*>/gi, '');
+      
+    processed = processed.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_match, css) => {
+      const scoped = scopeCss(css, prefix);
+      return `<style>${scoped}</style>`;
+    });
+    
+    return processed.trim();
+  };
+
   const renderComponent = () => {
     const { type, props } = component;
+    const scopePrefix = `[data-component-id="${component.id}"]`;
     const customCssContent = shouldApplyCustomCss && props?.customCss ? (
-      <style>{props.customCss}</style>
+      <style>{scopeCss(props.customCss, scopePrefix)}</style>
     ) : null;
     // combinedStyle is already calculated at the top level
 
@@ -1422,6 +1441,40 @@ export function RenderableComponent({
           </ResizeHandle>
         );
       }
+
+      case 'custom-component':
+        return (
+          <ResizeHandle data-component-id={component.id}
+            onResize={handleResize}
+            initialX={component.position?.x || 0}
+            initialY={component.position?.y || 0}
+            initialWidth={parseSize(style?.width, 300)}
+            initialHeight={parseSize(style?.height, 200)}
+            className="group block"
+            minWidth={50}
+            minHeight={50}
+            disabled={isPreview}
+            onResizeStart={onResizeStart}
+            onResizeEnd={onResizeEnd}
+            autoSize={true}
+          >
+            {customCssContent}
+            <div 
+              style={{ 
+                ...combinedStyle, 
+                width: 'auto',
+                height: 'auto',
+                pointerEvents: isPreview ? 'auto' : 'none' 
+              }}
+              className={props.className}
+            >
+              {props.css && (
+                <style dangerouslySetInnerHTML={{ __html: scopeCss(props.css, scopePrefix) }} />
+              )}
+              <div dangerouslySetInnerHTML={{ __html: processHtml(props.html, scopePrefix) }} />
+            </div>
+          </ResizeHandle>
+        );
 
       case 'paymongo-button':
         const pmWidth = parseSize(style?.width, 160);

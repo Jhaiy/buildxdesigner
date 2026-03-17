@@ -93,4 +93,5 @@ export interface EditorState {
   siteTitle?: string;
   siteLogoUrl?: string;
   exportSnapshot: ComponentData[];
+  customComponents?: any[];
 }

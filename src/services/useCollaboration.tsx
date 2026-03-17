@@ -519,6 +519,7 @@ function useCollaborationLogic({
     });
 
     const autoSaveTimer = setTimeout(async () => {
+      console.log("[autosave] timer fired", { activeProjectId });
       if (!activeProjectId) {
         console.warn("[autosave] skipped: no activeProjectId");
         return;
@@ -533,19 +534,10 @@ function useCollaborationLogic({
         const user_id = session?.user?.id;
         let persisted = false;
 
-        // FIX 4: Restore reading from yComponents.toArray() (v1 approach) rather
-        // than state.components (v2 stale closure). Using state.components inside
-        // a setTimeout captures the value at effect-creation time, which can be
-        // stale by the time the 2s timer fires — causing saves to write outdated
-        // component data and overwrite collaborator changes.
         const { yComponents } = getOrInitDoc();
         const currentComponents = yComponents.toArray();
 
-        console.log("[autosave] starting", {
-          activeProjectId,
-          componentCount: currentComponents.length,
-          hasUnsavedChanges: state.hasUnsavedChanges,
-        });
+        console.log("[autosave] components to save:", currentComponents.map(c => ({ id: c.id, type: c.type })));
 
         if (user_id) {
           const { error: saveError } = await saveProject({
@@ -558,72 +550,43 @@ function useCollaborationLogic({
             siteLogoUrl: state.siteLogoUrl,
           });
 
-          console.log("[autosave] saveProject result", {
-            activeProjectId,
-            saveError,
-          });
+          if (saveError) {
+            console.error("[autosave] project save error:", saveError);
+          } else {
+            console.log("[autosave] project save success");
+          }
 
           persisted = !saveError;
-          if (saveError) {
-            console.warn(
-              "Project save failed, trying component sync:",
-              saveError,
-            );
-          }
         }
+
+        const { error: syncError } = await syncProjectComponents(
+          currentComponents,
+          activeProjectId,
+        );
+
+        if (syncError) {
+          console.error("[autosave] component sync error:", syncError);
+        } else {
+          console.log("[autosave] component sync success");
+        }
+
+        persisted = persisted || !syncError;
 
         if (persisted) {
-          const { error: syncAfterSaveError } = await syncProjectComponents(
-            currentComponents,
-            activeProjectId,
-          );
-
-          console.log("[autosave] sync after save result", {
-            activeProjectId,
-            syncAfterSaveError,
-          });
-
-          if (syncAfterSaveError) {
-            console.warn(
-              "Component sync after project save failed:",
-              syncAfterSaveError,
-            );
-          }
-        }
-
-        if (!persisted) {
-          const { error: syncError } = await syncProjectComponents(
-            currentComponents,
-            activeProjectId,
-          );
-
-          console.log("[autosave] fallback sync result", {
-            activeProjectId,
-            syncError,
-          });
-
-          persisted = !syncError;
-          if (syncError) {
-            throw syncError;
-          }
-        }
-
-        if (!persisted) {
+          setState((prev) => ({
+            ...prev,
+            isSaving: false,
+            hasUnsavedChanges: false,
+            lastSaved: new Date(),
+          }));
+        } else {
           setState((prev) => ({ ...prev, isSaving: false }));
-          return;
         }
-
-        setState((prev) => ({
-          ...prev,
-          isSaving: false,
-          hasUnsavedChanges: false,
-          lastSaved: new Date(),
-        }));
       } catch (error) {
-        console.error("Auto-save error:", error);
+        console.error("[autosave] critical error:", error);
         setState((prev) => ({ ...prev, isSaving: false }));
       }
-    }, 2000);
+    }, 1000);
 
     return () => {
       console.log("[autosave timer cleared]", { activeProjectId });

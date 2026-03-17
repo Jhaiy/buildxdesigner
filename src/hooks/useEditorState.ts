@@ -11,6 +11,8 @@ import {
   fetchProjectComponents,
   syncProjectComponents,
 } from "../supabase/data/projectService";
+import { saveCustomComponent, fetchCustomComponents, deleteCustomComponent, updateCustomComponent } from "../supabase/data/customComponentService";
+import { publishComponent } from "../supabase/data/publishedComponentService";
 import useCollaboration from "../services/useCollaboration";
 import { getApiBaseUrl } from "../utils/apiConfig";
 
@@ -159,6 +161,7 @@ export function useEditorState() {
     projectLastPublishedAt: undefined as string | undefined,
     projectTemplatePublished: undefined as boolean | undefined,
     exportSnapshot: [],
+    customComponents: [],
   });
 
   const {
@@ -1078,7 +1081,7 @@ export function useEditorState() {
         const { yComponents } = getOrInitDoc();
         const currentComponents = yComponents.toArray();
 
-        await saveProject({
+        const { error: saveError } = await saveProject({
           id: state.currentProjectId,
           name: state.projectName || "Untitled Project",
           project_layout: currentComponents,
@@ -1086,6 +1089,10 @@ export function useEditorState() {
           siteTitle: state.siteTitle,
           siteLogoUrl: state.siteLogoUrl,
         });
+
+        if (!saveError) {
+          await syncProjectComponents(currentComponents, state.currentProjectId);
+        }
 
         setState((prev) => ({
           ...prev,
@@ -1592,6 +1599,157 @@ export function useEditorState() {
     replaceComponents(components);
   };
 
+  const refreshCustomComponents = async () => {
+    if (!state.currentProjectId) return;
+    
+    try {
+      // Get current user session
+      const { data: { session } } = await getSupabaseSession();
+      const userId = session?.user?.id;
+      
+      if (!userId) {
+        setState((prev) => ({ ...prev, customComponents: [] }));
+        return;
+      }
+
+      // Get all user's projects
+      const { data: userProjects, error: projectsError } = await supabase
+        .from("projects")
+        .select("projects_id")
+        .eq("user_id", userId);
+
+      if (projectsError) {
+        throw projectsError;
+      }
+
+      if (!userProjects || userProjects.length === 0) {
+        setState((prev) => ({ ...prev, customComponents: [] }));
+        return;
+      }
+
+      const projectIds = userProjects.map((p: any) => p.projects_id);
+
+      // Get all custom components from all projects
+      const { data: allComponents, error: componentsError } = await supabase
+        .from("custom_components")
+        .select(`
+          *,
+          projects!inner(
+            user_id
+          )
+        `)
+        .in("project_id", projectIds)
+        .order("created_at", { ascending: false });
+
+      if (componentsError) {
+        throw componentsError;
+      }
+
+      setState((prev) => ({ ...prev, customComponents: allComponents || [] }));
+    } catch (error) {
+      console.error("Failed to refresh custom components:", error);
+      setState((prev) => ({ ...prev, customComponents: [] }));
+    }
+  };
+
+  useEffect(() => {
+    refreshCustomComponents();
+  }, [state.currentProjectId]);
+
+  const handleSaveCustomComponent = async (
+    name: string,
+    description: string,
+    html: string,
+    css: string,
+  ) => {
+    if (!state.currentProjectId) return;
+    const componentData = {
+      type: "custom-component",
+      props: {
+        html,
+        css,
+        name,
+        description,
+      },
+      style: {
+        width: "100%",
+        minHeight: "200px",
+      },
+    };
+
+    const { error } = await saveCustomComponent(
+      state.currentProjectId,
+      name,
+      componentData,
+    );
+    if (!error) {
+      await refreshCustomComponents();
+    } else {
+      throw error;
+    }
+  };
+
+  const handleDeleteCustomComponent = async (id: string) => {
+    const { error } = await deleteCustomComponent(id);
+    if (!error) {
+      await refreshCustomComponents();
+      // toast.success('Component deleted');
+    } else {
+      // toast.error('Failed to delete component');
+    }
+  };
+
+  const handleUpdateCustomComponent = async (
+    id: string,
+    name: string,
+    description: string,
+    html: string,
+    css: string,
+  ) => {
+    const componentData = {
+      type: "custom-component",
+      props: {
+        html,
+        css,
+        name,
+        description,
+      },
+      style: {
+        width: "100%",
+        minHeight: "200px",
+      },
+    };
+
+    const { error } = await updateCustomComponent(
+      id,
+      name,
+      componentData,
+    );
+    if (!error) {
+      await refreshCustomComponents();
+    } else {
+      throw error;
+    }
+  };
+
+  const handleExportComponent = async (component: any) => {
+    try {
+      const { data: { session } } = await getSupabaseSession();
+      const userId = session?.user?.id;
+      if (!userId) throw new Error('Not authenticated');
+
+      const { error } = await publishComponent(
+        userId,
+        component.name,
+        component.component_json?.props?.description || '',
+        component.component_json,
+      );
+      if (error) throw error;
+    } catch (error) {
+      throw error;
+    }
+  };
+
   // ==================== RETURN ====================
 
   return {
@@ -1672,6 +1830,12 @@ export function useEditorState() {
     duplicatePage,
     deletePage,
     updatePage,
+    // Custom Components
+    refreshCustomComponents,
+    saveCustomComponent: handleSaveCustomComponent,
+    updateCustomComponent: handleUpdateCustomComponent,
+    deleteCustomComponent: handleDeleteCustomComponent,
+    exportComponent: handleExportComponent,
     // Onboarding
     showOnboarding,
     setShowOnboarding,

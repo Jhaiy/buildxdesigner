@@ -33,7 +33,8 @@ import {
   EyeOff,
   Sparkles,
   ChevronDown,
-  Check
+  Check,
+  Info
 } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@supabase/supabase-js"
@@ -4303,7 +4304,7 @@ const selectValue = (!currentUrl || currentUrl === "#" || !isKnownUrl) ? "none" 
           </TabsTrigger>
           <TabsTrigger
             value="styling"
-            disabled={selectedComponent.props?.enableCustomCss}
+            disabled={selectedComponent.props?.enableCustomCss || selectedComponent.type === 'custom-component'}
             className="text-xs h-7 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Styling
@@ -4358,6 +4359,21 @@ const selectValue = (!currentUrl || currentUrl === "#" || !isKnownUrl) ? "none" 
                         Add custom CSS rules targeting this specific component. This overrides default styling if enabled and disables Styling tab.
                       </p>
                     </>
+                  ) : selectedComponent.type === 'custom-component' ? (
+                    <div className="space-y-3">
+                      <div className="bg-primary/5 border border-primary/20 rounded-md p-2 space-y-1.5">
+                        <div className="flex items-center gap-2 text-primary">
+                          <Info className="w-3 h-3" />
+                          <span className="text-[10px] font-medium uppercase tracking-wider">Custom Component</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground leading-normal">
+                          This is a custom component you created. Styling is managed within its own HTML &amp; CSS code.
+                        </p>
+                        <p className="text-[10px] text-primary/80 font-medium italic leading-tight">
+                          Click the Edit (pencil) icon in the sidebar to modify its appearance.
+                        </p>
+                      </div>
+                    </div>
                   ) : (
                     <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-2 space-y-1.5">
                       <div className="flex items-center gap-2 text-amber-500">
@@ -4516,8 +4532,18 @@ const selectValue = (!currentUrl || currentUrl === "#" || !isKnownUrl) ? "none" 
           </TabsContent>
 
           <TabsContent value="styling" className="p-3 space-y-3 mt-0 h-full">
-            <div className="pb-4">
-              <div className="space-y-3">
+            {selectedComponent.type === 'custom-component' ? (
+              <div className="flex flex-col items-center justify-center h-40 text-center p-6 bg-muted/20 rounded-xl border border-dashed border-border/60">
+                <Info className="w-8 h-8 text-primary/60 mb-3" />
+                <h3 className="text-sm font-semibold mb-1">Custom Component</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Styling is managed within the component code.
+                  Edit it in the sidebar to change its look.
+                </p>
+              </div>
+            ) : (
+              <div className="pb-4">
+                <div className="space-y-3">
                 {/* Button Styling Section */}
                 {selectedComponent.type === "button" && (
                   <div className="bg-muted/30 rounded-lg p-2.5 space-y-3">
@@ -5700,6 +5726,7 @@ const selectValue = (!currentUrl || currentUrl === "#" || !isKnownUrl) ? "none" 
                 </div>
               </div>
             </div>
+          )}
           </TabsContent>
         </div>
       </Tabs>

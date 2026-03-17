@@ -183,12 +183,53 @@ export function SiteRenderer({
     const isResponsive = viewportWidth <= TABLET_BP;
     const ratio = viewportWidth / DESIGN_WIDTH;
 
+    const [measuredHeight, setMeasuredHeight] = useState(0);
+
     const canvasHeight = filteredComponents.reduce((maxY, comp) => {
         const y = comp.position?.y ?? 0;
-        const h = parseFloat(String(comp.style?.height || "100")) || 100;
-        return Math.max(maxY, y + h);
+        const componentHeight = parseInt(String(comp.style?.height || 0)) || 
+                               (comp.type === 'custom-component' ? 800 : 200);
+        return Math.max(maxY, y + componentHeight);
     }, 0);
-    const containerHeight = Math.max(canvasHeight + 80, window.innerHeight);
+    
+    const containerHeight = Math.max(canvasHeight + 100, measuredHeight + 100, window.innerHeight);
+
+    useEffect(() => {
+        const updateHeight = () => {
+            const canvas = document.querySelector('.sr-canvas');
+            if (!canvas) return;
+            
+            let maxBottom = 0;
+            const children = canvas.children;
+            for (let i = 0; i < children.length; i++) {
+                const child = children[i] as HTMLElement;
+                if (child.hasAttribute('data-component-id') || child.style.position === 'absolute') {
+                    const rect = child.getBoundingClientRect();
+                    const canvasRect = canvas.getBoundingClientRect();
+                    const bottom = (rect.top - canvasRect.top) + rect.height;
+                    if (bottom > maxBottom) maxBottom = bottom;
+                }
+            }
+            if (maxBottom > 0) {
+                setMeasuredHeight(prev => Math.abs(prev - maxBottom) > 1 ? maxBottom : prev);
+            }
+        };
+
+        const observer = new MutationObserver(updateHeight);
+        const canvas = document.querySelector('.sr-canvas');
+        if (canvas) {
+            observer.observe(canvas, { childList: true, subtree: true, attributes: true });
+        }
+        
+        const timer = setTimeout(updateHeight, 500);
+        window.addEventListener('resize', updateHeight);
+        
+        return () => {
+            observer.disconnect();
+            clearTimeout(timer);
+            window.removeEventListener('resize', updateHeight);
+        };
+    }, [filteredComponents]);
 
     return (
         <div

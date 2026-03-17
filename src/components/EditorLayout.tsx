@@ -28,6 +28,15 @@ import { EditorTopBar } from "./EditorTopBar";
 import { TooltipProvider } from "./ui/tooltip";
 import { ResizeTooltip } from "./ResizeTooltip";
 import { EditTooltip } from "./EditTooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { Button } from "./ui/button";
 import { Toaster } from "./ui/sonner";
 import { CodeViewEditor } from "./CodeViewEditor";
 import type { useEditorState } from "../hooks/useEditorState";
@@ -80,9 +89,39 @@ export function EditorLayout({
     replaceComponents,
     setLocalCursor,
     clearLocalCursor,
+    saveCustomComponent,
+    updateCustomComponent,
+    deleteCustomComponent,
+    exportComponent,
+    refreshCustomComponents,
   } = editor;
 
   const [accessCheckTimedOut, setAccessCheckTimedOut] = useState(false);
+  
+  const [showExportConfirmDialog, setShowExportConfirmDialog] = useState(false);
+  const [pendingExportComponent, setPendingExportComponent] = useState<any>(null);
+
+  const openExportConfirmDialog = async (component: any) => {
+    setPendingExportComponent(component);
+    setShowExportConfirmDialog(true);
+  };
+
+  const handleExportComponent = async () => {
+    if (pendingExportComponent) {
+      try {
+        await exportComponent(pendingExportComponent);
+        const { toast } = await import('sonner');
+        toast.success(`"${pendingExportComponent.name}" published to community!`);
+        setShowExportConfirmDialog(false);
+        setPendingExportComponent(null);
+      } catch (err) {
+        const { toast } = await import('sonner');
+        toast.error('Failed to publish component');
+        setShowExportConfirmDialog(false);
+        setPendingExportComponent(null);
+      }
+    }
+  };
 
   useEffect(() => {
     const isChecking =
@@ -237,6 +276,13 @@ export function EditorLayout({
                       onReorder={canEditProject ? reorderComponent : () => {}}
                       onMoveLayer={canEditProject ? editor.moveLayer : () => {}}
                       activePageId={state.activePageId}
+                      customComponents={state.customComponents}
+                      onSaveCustomComponent={saveCustomComponent}
+                      onUpdateCustomComponent={updateCustomComponent}
+                      onDeleteCustomComponent={deleteCustomComponent}
+                      onExportComponent={openExportConfirmDialog}
+                      onImportedComponent={refreshCustomComponents}
+                      projectId={state.currentProjectId || ''}
                     />
                   </div>
                 </>
@@ -558,6 +604,41 @@ export function EditorLayout({
               pages={state.pages}
             />
           )}
+
+          {/* Export Confirmation Dialog */}
+          <Dialog
+            open={showExportConfirmDialog}
+            onOpenChange={(open) => {
+              setShowExportConfirmDialog(open)
+              if (!open) setPendingExportComponent(null)
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Publish to Community?</DialogTitle>
+                <DialogDescription>
+                  Share "{pendingExportComponent?.name || 'this component'}" with the community? Other users will be able to import and use it.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowExportConfirmDialog(false)
+                    setPendingExportComponent(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleExportComponent}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  Publish
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Toaster />
         </div>

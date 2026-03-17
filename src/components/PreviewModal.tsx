@@ -866,15 +866,55 @@ export function PreviewModal({ components, onClose, activePageId = 'home', pages
     return compPageId === activeId;
   });
 
+  const [measuredHeight, setMeasuredHeight] = useState(0);
+
   // Safe canvas height at full 1920px, then CSS scale brings it to device size
-  const fullCanvasHeight = filteredComponents.length > 0
-    ? Math.max(
-        ...filteredComponents.map(c =>
-          (c.position?.y || 0) + (parseInt(String(c.style?.height || 0)) || 100)
-        ),
-        800
-      )
-    : 800;
+  const fullCanvasHeight = Math.max(
+    filteredComponents.length > 0
+      ? Math.max(
+          ...filteredComponents.map(c => {
+            const componentHeight = parseInt(String(c.style?.height || 0)) || 
+                                   (c.type === 'custom-component' ? 800 : 200);
+            return (c.position?.y || 0) + componentHeight;
+          })
+        )
+      : 1000,
+    measuredHeight
+  );
+
+  useEffect(() => {
+    const updateHeight = () => {
+      const container = previewRef.current;
+      if (!container) return;
+      
+      let maxBottom = 0;
+      const children = container.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i] as HTMLElement;
+        if (child.hasAttribute('data-component-id') || child.style.position === 'absolute') {
+          const rect = child.getBoundingClientRect();
+          const containerRect = container.getBoundingClientRect();
+          const bottom = (rect.bottom - containerRect.top) / scale;
+          if (bottom > maxBottom) maxBottom = bottom;
+        }
+      }
+      if (maxBottom > 0) {
+        setMeasuredHeight(prev => Math.abs(prev - maxBottom) > 1 ? maxBottom : prev);
+      }
+    };
+
+    const observer = new MutationObserver(updateHeight);
+    const container = previewRef.current;
+    if (container) {
+      observer.observe(container, { childList: true, subtree: true, attributes: true });
+    }
+    
+    const timer = setTimeout(updateHeight, 500);
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [filteredComponents, scale]);
   // ──────────────────────────────────────────────────────────────────────────
 
   return (
