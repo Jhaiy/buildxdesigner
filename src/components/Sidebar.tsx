@@ -23,8 +23,25 @@ import {
   ChevronDown,
   Users,
   BoxSelect,
+  Plus,
+  Trash2,
+  Pencil,
+  Upload,
+  Download
 } from "lucide-react"
 import type { ComponentData } from "../App"
+import { CustomComponentModal } from "./CustomComponentModal"
+import { ImportComponentModal } from "./ImportComponentModal"
+import { Button } from "./ui/button"
+import { toast } from "sonner"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog"
 
 interface DraggableComponentProps {
   type: string
@@ -69,6 +86,13 @@ interface SidebarProps {
   onReorder: (id: string, direction: 'front' | 'back') => void
   onMoveLayer: (id: string, action: 'forward' | 'backward') => void
   activePageId: string // New prop to track the current page
+  customComponents?: any[]
+  onSaveCustomComponent?: (name: string, description: string, html: string, css: string) => Promise<void>
+  onUpdateCustomComponent?: (id: string, name: string, description: string, html: string, css: string) => Promise<void>
+  onDeleteCustomComponent?: (id: string) => void
+  onExportComponent?: (component: any) => Promise<void>
+  onImportedComponent?: () => void
+  projectId?: string
 }
 
 export function Sidebar({ 
@@ -80,9 +104,37 @@ export function Sidebar({
   onDelete,
   onReorder,
   onMoveLayer,
-  activePageId
+  activePageId,
+  customComponents = [],
+  onSaveCustomComponent,
+  onUpdateCustomComponent,
+  onDeleteCustomComponent,
+  onExportComponent,
+  onImportedComponent,
+  projectId = '',
 }: SidebarProps) {
   const [searchTerm, setSearchTerm] = useState("")
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [editingComponent, setEditingComponent] = useState<any | null>(null)
+  
+  // Component deletion confirmation state
+  const [showDeleteComponentDialog, setShowDeleteComponentDialog] = useState(false)
+  const [pendingDeleteComponent, setPendingDeleteComponent] = useState<any>(null)
+
+  const openDeleteComponentDialog = (component: any) => {
+    setPendingDeleteComponent(component)
+    setShowDeleteComponentDialog(true)
+  }
+
+  const handleDeleteComponent = () => {
+    if (pendingDeleteComponent) {
+      onDeleteCustomComponent?.(pendingDeleteComponent.cc_id || pendingDeleteComponent.id)
+      toast.success(`"${pendingDeleteComponent.name}" has been deleted.`)
+      setShowDeleteComponentDialog(false)
+      setPendingDeleteComponent(null)
+    }
+  }
 
   // Filter layers to only show components belonging to the active page
   const filteredLayers = components.filter(c => {
@@ -98,35 +150,6 @@ export function Sidebar({
     );
   });
 
-  const basicComponents = [
-    { type: "text", icon: <Type className="w-3.5 h-3.5" />, label: "Text", props: { content: "Sample Text" } },
-    { type: "heading", icon: <Type className="w-3.5 h-3.5" />, label: "Heading", props: { content: "Heading", level: 1 } },
-    { type: "button", icon: <MousePointer className="w-3.5 h-3.5" />, label: "Button", props: { text: "Click Me", variant: "default" } },
-    { type: "image", icon: <ImageIcon className="w-3.5 h-3.5" />, label: "Image", props: { src: "", alt: "Image", width: 300, height: 200 } },
-    { type: "container", icon: <Square className="w-3.5 h-3.5" />, label: "Container", props: {} },
-  ]
-
-  const layoutComponents = [
-    { type: "navbar", icon: <Navigation className="w-3.5 h-3.5" />, label: "Navigation Bar", props: { brand: "Brand", links: ["Home", "About", "Contact"] } },
-    { type: "hero", icon: <FileText className="w-3.5 h-3.5" />, label: "Hero Section", props: { title: "Welcome", subtitle: "Build amazing websites" } },
-    { type: "footer", icon: <Menu className="w-3.5 h-3.5" />, label: "Footer", props: { copyright: "© 2024 Your Company" } },
-    { type: "grid", icon: <Grid3X3 className="w-3.5 h-3.5" />, label: "Grid Layout", props: { columns: 3 } },
-  ]
-
-  const formComponents = [
-    { type: "input", icon: <FileText className="w-3.5 h-3.5" />, label: "Input Field", props: { placeholder: "Enter text...", type: "text" } },
-    { type: "textarea", icon: <FileText className="w-3.5 h-3.5" />, label: "Text Area", props: { placeholder: "Enter message..." } },
-    { type: "select", icon: <ChevronDown className="w-3.5 h-3.5" />, label: "Select / Dropdown", props: { label: "Select Option", placeholder: "Select an option...", options: [{ label: "Option 1", value: "option1" }, { label: "Option 2", value: "option2" }] } },
-    { type: "checkbox", icon: <Square className="w-3.5 h-3.5" />, label: "Checkbox", props: { label: "Remember me", checked: false } },
-    { type: "radio-group", icon: <Users className="w-3.5 h-3.5" />, label: "Radio Group", props: { label: "Choose an option", options: [{ label: "Option 1", value: "option1" }, { label: "Option 2", value: "option2" }], defaultValue: "option1" } },
-    { type: "form", icon: <Mail className="w-3.5 h-3.5" />, label: "Contact Form", props: { title: "Contact Us" } },
-  ]
-
-  const mediaComponents = [
-    { type: "gallery", icon: <ImageIcon className="w-3.5 h-3.5" />, label: "Image Gallery", props: { images: [] } },
-  ]
-
-  const marketingComponents: any[] = []
 
   return (
     <div
@@ -141,9 +164,9 @@ export function Sidebar({
               <Blocks className="w-3.5 h-3.5" />
               Blocks
             </TabsTrigger>
-            <TabsTrigger value="components" className="flex items-center gap-1.5 text-xs h-7">
+            <TabsTrigger value="components" className="flex items-center gap-1.5 text-xs h-7 shrink-0">
               <Code2 className="w-3.5 h-3.5" />
-              Comps
+              Custom
             </TabsTrigger>
             <TabsTrigger value="layers" className="flex items-center gap-1.5 text-xs h-7">
               <Layers className="w-3.5 h-3.5" />
@@ -157,63 +180,113 @@ export function Sidebar({
         </TabsContent>
 
         <TabsContent value="components" className="flex-1 mt-0 border-0 p-3 overflow-y-auto">
-          <div className="space-y-3">
-            <div>
-              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Basic Elements</h4>
-              <div className="space-y-1.5">
-                {basicComponents.map((component) => (
-                  <DraggableComponent key={component.type} {...component} />
-                ))}
-              </div>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Button 
+                className="flex-1 justify-start gap-2" 
+                variant="outline"
+                onClick={() => {
+                  setEditingComponent(null);
+                  setIsModalOpen(true);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                Create
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setIsImportModalOpen(true)}
+              >
+                <Download className="w-4 h-4" />
+                Import
+              </Button>
             </div>
-            <Separator />
-            <div>
-              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Layout</h4>
-              <div className="space-y-1.5">
-                {layoutComponents.map((component) => (
-                  <DraggableComponent key={component.type} {...component} />
-                ))}
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Forms</h4>
-              <div className="space-y-1.5">
-                {formComponents.map((component) => (
-                  <DraggableComponent key={component.type} {...component} />
-                ))}
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Media</h4>
-              <div className="space-y-1.5">
-                {mediaComponents.map((component) => (
-                  <DraggableComponent key={component.type} {...component} />
-                ))}
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">Integrations</h4>
-              <div className="space-y-1.5">
-                <DraggableComponent
-                  type="paymongo-button"
-                  icon={<CreditCard className="w-3.5 h-3.5" />}
-                  label="PayMongo Button"
-                  props={{
-                    label: "Buy Now",
-                    amount: 100,
-                    description: "Product Purchase",
-                    currency: "PHP",
-                    variant: "default",
-                    size: "default"
-                  }}
-                />
+
+            <div className="space-y-3">
+              <div>
+                <h4 className="mb-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">Custom Components</h4>
+                <div className="space-y-2">
+                  {customComponents.length === 0 ? (
+                    <div className="text-[10px] text-muted-foreground text-center py-4 border border-dashed rounded-md">
+                      No custom components yet.
+                    </div>
+                  ) : (
+                    customComponents.map((cc) => (
+                      <div key={cc.id} className="group relative">
+                        <DraggableComponent 
+                           type="custom-component" 
+                           icon={<Code2 className="w-3.5 h-3.5" />} 
+                           label={cc.name} 
+                           props={{ ...cc.component_json.props, enableCustomCss: true }} 
+                        />
+                        <div className="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingComponent({
+                                id: cc.id,
+                                name: cc.name,
+                                description: cc.component_json.props.description || '',
+                                html: cc.component_json.props.html || '',
+                                css: cc.component_json.props.css || '',
+                              });
+                              setIsModalOpen(true);
+                            }}
+                            className="p-1 hover:bg-primary/10 hover:text-primary rounded"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onExportComponent?.(cc);
+                            }}
+                            className="p-1 hover:bg-green-500/10 hover:text-green-600 rounded"
+                            title="Publish to community"
+                          >
+                            <Upload className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDeleteComponentDialog(cc);
+                            }}
+                            className="p-1 hover:bg-destructive/10 hover:text-destructive rounded"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </TabsContent>
+
+        <CustomComponentModal 
+          isOpen={isModalOpen}
+          initialData={editingComponent}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingComponent(null);
+          }}
+          onSave={onSaveCustomComponent || (async () => {})}
+          onUpdate={onUpdateCustomComponent}
+          projectId={projectId}
+        />
+
+        <ImportComponentModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          projectId={projectId}
+          onImported={() => {
+            onImportedComponent?.();
+            setIsImportModalOpen(false);
+          }}
+        />
 
         <TabsContent value="layers" className="flex-1 mt-0 border-0 overflow-hidden">
           <LayerPanel 
@@ -229,6 +302,41 @@ export function Sidebar({
           />
         </TabsContent>
       </Tabs>
+      
+      {/* Delete Component Confirmation Dialog */}
+      <Dialog
+        open={showDeleteComponentDialog}
+        onOpenChange={(open) => {
+          setShowDeleteComponentDialog(open)
+          if (!open) setPendingDeleteComponent(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete component?</DialogTitle>
+            <DialogDescription>
+              This will delete "{pendingDeleteComponent?.name || 'this component'}". This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteComponentDialog(false)
+                setPendingDeleteComponent(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteComponent}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

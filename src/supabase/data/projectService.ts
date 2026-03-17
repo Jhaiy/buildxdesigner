@@ -326,7 +326,7 @@ export async function fetchProjectComponents(
         style: c.style || {},
         position: c.position || { x: 0, y: 0 },
         page_id: c.page_id || "home",
-        page_ids: c.page_ids || [c.page_id || "home"],
+        page_ids: (c.props && c.props.page_ids) || c.page_ids || [c.page_id || "home"],
         children: [],
       };
       map.set(c.id, component);
@@ -359,15 +359,19 @@ export async function syncProjectComponents(
     const flatten = (comps: any[], parentId: string | null = null) => {
       comps.forEach((c, index) => {
         currentIds.add(c.id);
+        const props = { 
+          ...c.props,
+          page_ids: c.page_ids || [c.page_id || "home"]
+        };
+
         flatList.push({
           id: c.id,
           project_id: projectId,
           type: c.type,
-          props: c.props,
+          props: props,
           style: c.style,
           position: c.position,
           page_id: c.page_id || "home",
-          page_ids: c.page_ids || [c.page_id || "home"],
           parent_id: parentId,
           sort_order: index,
         });

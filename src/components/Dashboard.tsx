@@ -25,6 +25,14 @@ import {
   ArrowRight,
   FileText,
   Heart,
+  Store,
+  Download,
+  Check,
+  Package,
+  Calendar,
+  Code2,
+  User,
+  Library,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -75,10 +83,15 @@ import {
   fetchTrendingTemplatesFromApi,
   fetchTrashedProjectsFromApi,
 } from "../utils/apiHelper";
+// MarketplaceComponentModal removed — import happens inline on card click
+import { toast } from "sonner";
+import { importPublishedComponent } from "../supabase/data/publishedComponentService";
+import { deleteCustomComponent } from "../supabase/data/customComponentService";
 
-type DashboardSection = "new-chat" | "drafts" | "team" | "all" | "trash";
+type DashboardSection = "new-chat" | "drafts" | "team" | "all" | "trash" | "marketplace";
 
 const DASHBOARD_RETURN_SECTION_KEY = "dashboard_return_section";
+
 
 interface DashboardProps {
   onCreateFromScratch: () => void;
@@ -388,6 +401,51 @@ export function Dashboard({
     TemplateCardData[]
   >([]);
   const [trendingLoading, setTrendingLoading] = useState(false);
+
+  const [marketplaceComponents, setMarketplaceComponents] = useState<any[]>([]);
+  const [marketplaceLoading, setMarketplaceLoading] = useState(false);
+  const [marketplaceSearch, setMarketplaceSearch] = useState("");
+  const [marketplaceApiBase, setMarketplaceApiBase] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
+  const [selectedComponentForImport, setSelectedComponentForImport] = useState<any>(null);
+  
+  const [showMyComponentsModal, setShowMyComponentsModal] = useState(false);
+  const [userCustomComponents, setUserCustomComponents] = useState<any[]>([]);
+  const [userImportedComponents, setUserImportedComponents] = useState<any[]>([]);
+  const [myComponentsLoading, setMyComponentsLoading] = useState(false);
+  
+  const [showDeleteComponentDialog, setShowDeleteComponentDialog] = useState(false);
+  const [pendingDeleteComponent, setPendingDeleteComponent] = useState<any>(null);
+
+  useEffect(() => {
+    if (activeSection === "marketplace") {
+      setMarketplaceLoading(true);
+      const apiBases = getApiBaseCandidates();
+      (async () => {
+        for (const base of apiBases) {
+          try {
+            const res = await fetch(`${base}/api/marketplace/components`);
+            if (res.ok) {
+              const data = await res.json();
+              setMarketplaceComponents(data);
+              setMarketplaceApiBase(base);
+              break;
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch from ${base}:`, err);
+          }
+        }
+        setMarketplaceLoading(false);
+      })();
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (currentUserId && activeSection === "marketplace") {
+      fetchUserCustomComponents();
+    }
+  }, [currentUserId, activeSection]);
 
   useEffect(() => {
     const openSettingsTab = localStorage.getItem("open_account_settings");
@@ -1855,6 +1913,197 @@ export function Dashboard({
     }
   };
 
+  const handleImportComponent = async () => {
+    if (!selectedComponentForImport || !currentUserId) {
+      toast.error("Please log in to import components.");
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      
+      let targetProjectId: string;
+      
+      const { data: userProjects, error: projectsError } = await supabase
+        .from("projects")
+        .select("projects_id")
+        .eq("user_id", currentUserId)
+        .limit(1);
+      
+      if (projectsError || !userProjects || userProjects.length === 0) {
+        const { data: newProject, error: createError } = await supabase
+          .from("projects")
+          .insert({
+            user_id: currentUserId,
+            name: "My Components",
+            description: "My personal component library",
+            category: "Other",
+            status: "draft"
+          })
+          .select("projects_id")
+          .single();
+        
+        if (createError || !newProject) {
+          throw new Error("Failed to create a project for your components.");
+        }
+        
+        targetProjectId = newProject.projects_id;
+      } else {
+        targetProjectId = userProjects[0].projects_id;
+      }
+
+      const { data, error } = await importPublishedComponent(
+        targetProjectId,
+        {
+          name: selectedComponentForImport.name,
+          component_json: {
+            ...selectedComponentForImport.component_json,
+            props: {
+              ...selectedComponentForImport.component_json?.props,
+              importedFrom: true,
+              original_creator_id: selectedComponentForImport.user_id,
+              marketplaceId: selectedComponentForImport.id,
+              imported_at: new Date().toISOString()
+            }
+          }
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success(`"${selectedComponentForImport.name}" has been imported to your components!`);
+      
+      await fetchUserCustomComponents();
+      
+      setShowImportConfirmDialog(false);
+      setSelectedComponentForImport(null);
+      
+    } catch (error) {
+      console.error("Failed to import component:", error);
+      toast.error("Failed to import component. Please try again.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const fetchUserCustomComponents = async () => {
+    if (!currentUserId) {
+      setUserCustomComponents([]);
+      setUserImportedComponents([]);
+      return;
+    }
+
+    try {
+      setMyComponentsLoading(true);
+
+      const { data: userProjects, error: projectsError } = await supabase
+        .from("projects")
+        .select("projects_id")
+        .eq("user_id", currentUserId);
+
+      if (projectsError) {
+        throw projectsError;
+      }
+
+      if (!userProjects || userProjects.length === 0) {
+        setUserCustomComponents([]);
+        setUserImportedComponents([]);
+        return;
+      }
+
+      const projectIds = userProjects.map(p => p.projects_id);
+
+      const { data: allComponents, error: componentsError } = await supabase
+        .from("custom_components")
+        .select(`
+          *,
+          projects!inner(
+            user_id
+          )
+        `)
+        .in("project_id", projectIds)
+        .order("created_at", { ascending: false });
+
+      if (componentsError) {
+        throw componentsError;
+      }
+
+      const imported: any[] = [];
+      const created: any[] = [];
+
+      if (allComponents) {
+        for (const component of allComponents) {
+          const componentData = component.component_json;
+          const isImported = componentData?.props?.importedFrom || 
+                           componentData?.marketplaceId ||
+                           componentData?.original_creator_id !== currentUserId;
+          
+          if (isImported) {
+            imported.push({
+              ...component,
+              imported: true,
+              original_creator_id: componentData?.original_creator_id
+            });
+          } else {
+            created.push({
+              ...component,
+              imported: false
+            });
+          }
+        }
+      }
+
+      setUserImportedComponents(imported);
+      setUserCustomComponents(created);
+
+    } catch (error) {
+      console.error("Failed to fetch user components:", error);
+      toast.error("Failed to load your components.");
+      setUserCustomComponents([]);
+      setUserImportedComponents([]);
+    } finally {
+      setMyComponentsLoading(false);
+    }
+  };
+
+  const openDeleteComponentDialog = (component: any) => {
+    setPendingDeleteComponent(component);
+    setShowDeleteComponentDialog(true);
+  };
+
+  const handleDeleteComponent = async () => {
+    if (!pendingDeleteComponent) return;
+
+    try {
+      const { error } = await deleteCustomComponent(pendingDeleteComponent.id);
+      
+      if (error) {
+        throw error;
+      }
+
+      toast.success(`"${pendingDeleteComponent.name}" has been deleted.`);
+      
+      setShowDeleteComponentDialog(false);
+      setPendingDeleteComponent(null);
+      
+      await fetchUserCustomComponents();
+      
+    } catch (error) {
+      console.error("Failed to delete component:", error);
+      toast.error("Failed to delete component. Please try again.");
+    }
+  };
+
+  const isComponentImported = (componentId: string) => {
+    return userImportedComponents.some(cc => 
+      cc.component_json?.props?.marketplaceId === componentId ||
+      cc.component_json?.props?.importedFrom === true && 
+      cc.component_json?.props?.marketplaceId === componentId
+    );
+  };
+
   const generateUIWithGemini = async (prompt: string) => {
     try {
       setIsGenerating(true);
@@ -2269,6 +2518,19 @@ export function Dashboard({
               <span>Dashboard</span>
             </button>
 
+            {/* Marketplace */}
+            <button
+              onClick={() => setActiveSection("marketplace")}
+              className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md ${
+                activeSection === "marketplace"
+                  ? "text-blue-500 bg-blue-500/10"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <Store className="w-4 h-4" />
+              <span>Marketplace</span>
+            </button>
+
             {/* All Projects */}
             <button
               onClick={() => setActiveSection("all")}
@@ -2631,6 +2893,171 @@ export function Dashboard({
                     </div>
                   </div>
                 </div>
+              </>
+            ) : activeSection === "marketplace" ? (
+              <>
+           <div className="flex flex-col min-h-[calc(100vh-200px)]">
+              <div className="flex-1 px-4 pb-8 pt-0">
+                <div className="w-full max-w-7xl mx-auto">
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-2xl font-semibold text-foreground flex items-center gap-2">
+                        <Store className="w-6 h-6 text-primary" />
+                        Components Marketplace
+                      </h2>
+                    </div>
+
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="relative flex-1 max-w-md">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                        <Input
+                          placeholder="Search components..."
+                          value={marketplaceSearch}
+                          onChange={(e) => setMarketplaceSearch(e.target.value)}
+                          className="pl-9 h-9 bg-background border-border"
+                        />
+                      </div>
+                      <div className="ml-auto">
+                        <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="gap-2"
+                        onClick={() => {
+                          setShowMyComponentsModal(true);
+                          fetchUserCustomComponents();
+                        }}
+                      >
+                          <Library className="w-4 h-4" />
+                          My Components
+                        </Button>
+                      </div>
+                    </div>
+
+                    {marketplaceLoading ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div key={i} className="rounded-xl border border-border bg-card overflow-hidden">
+                            <Skeleton className="aspect-[4/3] w-full" />
+                            <div className="p-4">
+                              <Skeleton width="70%" height={18} />
+                              <Skeleton width="100%" height={14} className="mt-2" />
+                              <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
+                                <Skeleton circle width={24} height={24} />
+                                <Skeleton width={80} height={12} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (() => {
+                      const filtered = marketplaceComponents.filter(c =>
+                        c.name?.toLowerCase().includes(marketplaceSearch.toLowerCase()) ||
+                        c.description?.toLowerCase().includes(marketplaceSearch.toLowerCase()) ||
+                        c.creator_name?.toLowerCase().includes(marketplaceSearch.toLowerCase())
+                      );
+                      return filtered.length === 0 ? (
+                        <div className="col-span-full rounded-xl border border-dashed border-border p-12 text-center text-muted-foreground">
+                          <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                          <p className="font-semibold text-base">{marketplaceSearch ? 'No components match your search' : 'No components published yet'}</p>
+                          <p className="text-sm mt-1">{marketplaceSearch ? 'Try different keywords' : 'Be the first to publish one!'}</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
+                          {filtered.map((comp) => (
+                            <div
+                              key={comp.id}
+                              className="theme-interactive-card group relative rounded-xl overflow-hidden border border-border bg-card hover:shadow-lg transition-all cursor-pointer flex flex-col h-full"
+                            >
+                              {/* PREVIEW BOX: Using zoom to force content to fit */}
+                              <div className="relative flex-1 bg-white dark:bg-slate-950 aspect-[4/3] overflow-hidden flex items-center justify-center p-2">
+                                <style>
+                                  {`
+                                    .preview-container-${comp.id} {
+                                      ${comp.component_json?.props?.css || ''}
+                                      width: 100%;
+                                      display: flex;
+                                      justify-content: center;
+                                      align-items: center;
+                                    }
+                                    
+                                    /* This is the magic part: it shrinks the inner content to 50% size 
+                                      so it looks like a high-res thumbnail */
+                                    .inner-scaler-${comp.id} {
+                                      zoom: 0.5; 
+                                      -moz-transform: scale(0.5);
+                                      -moz-transform-origin: center center;
+                                      width: max-content;
+                                      height: max-content;
+                                    }
+                                  `}
+                                </style>
+
+                                <div className={`preview-container-${comp.id} w-full h-full`}>
+                                  <div 
+                                    className={`inner-scaler-${comp.id}`}
+                                    dangerouslySetInnerHTML={{ 
+                                      __html: comp.component_json?.props?.html || '' 
+                                    }} 
+                                  />
+                                </div>
+                                
+                                <div className="absolute inset-0 pointer-events-none border-b border-border/10 shadow-inner" />
+                              </div>
+
+                              <div className="px-4 py-3 border-t border-border/40 bg-card">
+                                <div className="flex items-center justify-between gap-3">
+                                  <h5 className="text-[13px] font-semibold text-foreground/90 truncate flex-1">
+                                    {comp.name}
+                                  </h5>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors group/heart">
+                                      <Heart className="w-4 h-4 text-muted-foreground group-hover/heart:text-red-500 transition-colors" />
+                                    </button>
+                                    {isComponentImported(comp.id) ? (
+                                      <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-full">
+                                        <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                      </div>
+                                    ) : (
+                                      <button 
+                                        className="p-1.5 hover:bg-primary/10 rounded-full transition-colors group/import"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedComponentForImport(comp);
+                                          setShowImportConfirmDialog(true);
+                                        }}
+                                      >
+                                        <Download className="w-4 h-4 text-muted-foreground group-hover/import:text-primary transition-colors" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                
+                                <div className="flex items-center justify-between mt-2">
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="w-5 h-5 border border-border/50">
+                                      <AvatarImage src={comp.creator_avatar || ""} />
+                                      <AvatarFallback className="text-[8px] bg-primary/10 text-primary uppercase">
+                                        {(comp.creator_name || 'A').substring(0, 2)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-[11px] font-medium text-muted-foreground truncate max-w-md">
+                                      {comp.creator_name}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground/60">
+                                    {new Date(comp.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
               </>
             ) : activeSection === "all" ||
               activeSection === "drafts" ||
@@ -3528,7 +3955,7 @@ export function Dashboard({
               cannot be undone or restored from trash.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex justify-end">
             <Button
               variant="outline"
               onClick={() => {
@@ -3644,7 +4071,7 @@ export function Dashboard({
             </p>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex justify-end">
             <Button variant="ghost" onClick={resetEditProjectDialog}>
               Cancel
             </Button>
@@ -3716,7 +4143,7 @@ export function Dashboard({
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex justify-end">
             <Button
               variant="ghost"
               onClick={() => {
@@ -3817,6 +4244,280 @@ export function Dashboard({
           setShowGettingStartedModal(true);
         }}
       />
+
+      {/* Import Component Confirmation Dialog */}
+      <Dialog
+        open={showImportConfirmDialog}
+        onOpenChange={(open) => {
+          setShowImportConfirmDialog(open);
+          if (!open) setSelectedComponentForImport(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import to My Components?</DialogTitle>
+            <DialogDescription>
+              Add "{selectedComponentForImport?.name || 'this component'}" to your personal component library. You'll be able to use it in your projects.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowImportConfirmDialog(false);
+                setSelectedComponentForImport(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImportComponent}
+              disabled={isImporting || !selectedComponentForImport}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isImporting ? "Importing..." : "Import Component"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* My Components Modal */}
+      <Dialog
+        open={showMyComponentsModal}
+        onOpenChange={(open) => {
+          setShowMyComponentsModal(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-6xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>My Components</DialogTitle>
+            <DialogDescription>
+              Manage your personal component library - both created and imported components
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-2 border-t border-border pt-6">
+            {myComponentsLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* Imported Components Section */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Download className="w-5 h-5" />
+                    Imported Components ({userImportedComponents.length})
+                  </h3>
+                  {userImportedComponents.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
+                      <Package className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                      <p className="font-semibold">No imported components yet</p>
+                      <p className="text-sm mt-1">Browse the marketplace and import components to get started</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {userImportedComponents.map((comp) => (
+                        <div
+                          key={comp.id}
+                          className="theme-interactive-card group relative rounded-xl overflow-hidden border border-border bg-card hover:shadow-lg transition-all cursor-pointer flex flex-col h-full"
+                        >
+                          {/* Preview */}
+                          <div className="relative flex-1 bg-white dark:bg-slate-950 aspect-[4/3] overflow-hidden flex items-center justify-center p-2">
+                            <style>
+                              {`
+                                .preview-container-${comp.id} {
+                                  ${comp.component_json?.props?.css || ''}
+                                  width: 100%;
+                                  display: flex;
+                                  justify-content: center;
+                                  align-items: center;
+                                }
+                                
+                                .inner-scaler-${comp.id} {
+                                  zoom: 0.5; 
+                                  -moz-transform: scale(0.5);
+                                  -moz-transform-origin: center center;
+                                  width: max-content;
+                                  height: max-content;
+                                }
+                              `}
+                            </style>
+                            <div className={`preview-container-${comp.id} w-full h-full`}>
+                              <div 
+                                className={`inner-scaler-${comp.id}`}
+                                dangerouslySetInnerHTML={{ 
+                                  __html: comp.component_json?.props?.html || '' 
+                                }} 
+                              />
+                            </div>
+                            <div className="absolute top-2 right-2">
+                              <Badge variant="secondary" className="text-xs">
+                                Imported
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {/* Component Info */}
+                          <div className="px-4 py-3 border-t border-border/40 bg-card">
+                            <div className="flex items-center justify-between gap-3">
+                              <h5 className="text-[13px] font-semibold text-foreground/90 truncate flex-1">
+                                {comp.name}
+                              </h5>
+                              <button 
+                                className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDeleteComponentDialog(comp);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 text-muted-foreground hover:text-red-500" />
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-[10px] text-muted-foreground/60">
+                                Imported {new Date(comp.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* User Created Components Section */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Code2 className="w-5 h-5" />
+                    Your Created Components ({userCustomComponents.length})
+                  </h3>
+                  {userCustomComponents.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border p-8 text-center text-muted-foreground">
+                      <Code2 className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                      <p className="font-semibold">No created components yet</p>
+                      <p className="text-sm mt-1">Start creating your own custom components in your projects</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {userCustomComponents.map((comp) => (
+                        <div
+                          key={comp.id}
+                          className="theme-interactive-card group relative rounded-xl overflow-hidden border border-border bg-card hover:shadow-lg transition-all cursor-pointer flex flex-col h-full"
+                        >
+                          {/* Preview */}
+                          <div className="relative flex-1 bg-white dark:bg-slate-950 aspect-[4/3] overflow-hidden flex items-center justify-center p-2">
+                            <style>
+                              {`
+                                .preview-container-${comp.id} {
+                                  ${comp.component_json?.props?.css || ''}
+                                  width: 100%;
+                                  display: flex;
+                                  justify-content: center;
+                                  align-items: center;
+                                }
+                                
+                                .inner-scaler-${comp.id} {
+                                  zoom: 0.5; 
+                                  -moz-transform: scale(0.5);
+                                  -moz-transform-origin: center center;
+                                  width: max-content;
+                                  height: max-content;
+                                }
+                              `}
+                            </style>
+                            <div className={`preview-container-${comp.id} w-full h-full`}>
+                              <div 
+                                className={`inner-scaler-${comp.id}`}
+                                dangerouslySetInnerHTML={{ 
+                                  __html: comp.component_json?.props?.html || '' 
+                                }} 
+                              />
+                            </div>
+                            <div className="absolute top-2 right-2">
+                              <Badge variant="default" className="text-xs">
+                                Created
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {/* Component Info */}
+                          <div className="px-4 py-3 border-t border-border/40 bg-card">
+                            <div className="flex items-center justify-between gap-3">
+                              <h5 className="text-[13px] font-semibold text-foreground/90 truncate flex-1">
+                                {comp.name}
+                              </h5>
+                              <button 
+                                className="p-1.5 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDeleteComponentDialog(comp);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 text-muted-foreground hover:text-red-500" />
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="text-[10px] text-muted-foreground/60">
+                                Created {new Date(comp.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setShowMyComponentsModal(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Component Confirmation Dialog */}
+      <Dialog
+        open={showDeleteComponentDialog}
+        onOpenChange={(open) => {
+          setShowDeleteComponentDialog(open);
+          if (!open) setPendingDeleteComponent(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete component forever?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete "{pendingDeleteComponent?.name || "this component"}". This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteComponentDialog(false);
+                setPendingDeleteComponent(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteComponent}
+            >
+              Delete forever
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
