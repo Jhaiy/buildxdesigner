@@ -1,36 +1,48 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
-import { supabase } from '../supabase/config/supabaseClient';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
+import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { Loader2 } from "lucide-react";
+import { supabase } from "../supabase/config/supabaseClient";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { sendPasswordResetEmail } from "../utils/apiHelper";
 
 export function ForgotPasswordPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetMode, setResetMode] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkRecoverySession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        setResetMode(true);
-      }
-    };
+    const recoveryFlag = "supabase_password_recovery_active";
 
-    checkRecoverySession();
+    if (window.sessionStorage.getItem(recoveryFlag) === "true") {
+      setResetMode(true);
+    }
 
-    const { data: authSubscription } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY' || session) {
-        setResetMode(true);
-      }
-    });
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(
+      (event) => {
+        if (event === "PASSWORD_RECOVERY") {
+          window.sessionStorage.setItem(recoveryFlag, "true");
+          setResetMode(true);
+          setStatusMessage(
+            "Recovery link verified. You can now set a new password.",
+          );
+          setErrorMessage(null);
+        }
+      },
+    );
 
     return () => {
       authSubscription.subscription.unsubscribe();
@@ -41,16 +53,17 @@ export function ForgotPasswordPage() {
     e.preventDefault();
     setLoading(true);
     setErrorMessage(null);
-    setStatusMessage('Sending password reset instructions...');
+    setStatusMessage("Sending password reset instructions...");
 
-    const redirectTo = `${window.location.origin}/forgot-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    const { error } = await sendPasswordResetEmail(email);
 
     if (error) {
       setErrorMessage(error.message);
       setStatusMessage(null);
     } else {
-      setStatusMessage('Password reset email sent. Please check your inbox and spam folder.');
+      setStatusMessage(
+        "Password reset email sent. Please check your inbox and spam folder.",
+      );
     }
 
     setLoading(false);
@@ -61,12 +74,12 @@ export function ForgotPasswordPage() {
     setErrorMessage(null);
 
     if (password !== confirmPassword) {
-      setErrorMessage('Passwords do not match Bobo ka kasi.');
+      setErrorMessage("Passwords do not match.");
       return;
     }
 
     setLoading(true);
-    setStatusMessage('Updating your password...');
+    setStatusMessage("Updating your password...");
 
     const { error } = await supabase.auth.updateUser({ password });
 
@@ -74,9 +87,12 @@ export function ForgotPasswordPage() {
       setErrorMessage(error.message);
       setStatusMessage(null);
     } else {
-      setStatusMessage('Password updated successfully. You can now sign in with your new password.');
-      setPassword('');
-      setConfirmPassword('');
+      window.sessionStorage.removeItem("supabase_password_recovery_active");
+      setStatusMessage(
+        "Password updated successfully. You can now sign in with your new password.",
+      );
+      setPassword("");
+      setConfirmPassword("");
     }
 
     setLoading(false);
@@ -86,16 +102,21 @@ export function ForgotPasswordPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>{resetMode ? 'Set a New Password' : 'Forgot Password'}</CardTitle>
+          <CardTitle>
+            {resetMode ? "Set a New Password" : "Forgot Password"}
+          </CardTitle>
           <CardDescription>
             {resetMode
-              ? 'Enter and confirm your new password to continue.'
-              : 'Enter your account email and we will send you a reset link.'}
+              ? "Enter and confirm your new password to continue."
+              : "Enter your account email and we will send you a reset link."}
           </CardDescription>
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={resetMode ? handleUpdatePassword : handleRequestReset} className="space-y-4">
+          <form
+            onSubmit={resetMode ? handleUpdatePassword : handleRequestReset}
+            className="space-y-4"
+          >
             {!resetMode ? (
               <div className="space-y-2">
                 <Label htmlFor="reset-email">Email</Label>
@@ -124,7 +145,9 @@ export function ForgotPasswordPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-new-password">Confirm New Password</Label>
+                  <Label htmlFor="confirm-new-password">
+                    Confirm New Password
+                  </Label>
                   <Input
                     id="confirm-new-password"
                     type="password"
@@ -138,19 +161,23 @@ export function ForgotPasswordPage() {
               </>
             )}
 
-            {statusMessage && <p className="text-sm text-blue-600">{statusMessage}</p>}
-            {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+            {statusMessage && (
+              <p className="text-sm text-blue-600">{statusMessage}</p>
+            )}
+            {errorMessage && (
+              <p className="text-sm text-red-600">{errorMessage}</p>
+            )}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  {resetMode ? 'Updating Password...' : 'Sending...'}
+                  {resetMode ? "Updating Password..." : "Sending..."}
                 </span>
               ) : resetMode ? (
-                'Update Password'
+                "Update Password"
               ) : (
-                'Send Reset Link'
+                "Send Reset Link"
               )}
             </Button>
           </form>
