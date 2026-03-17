@@ -35,6 +35,7 @@ import {
   Code2,
   User,
   Library,
+  Flag,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -91,6 +92,8 @@ import { ReportTemplateModal } from "./FlagTemplateModal";
 import { toast } from "sonner";
 import { importPublishedComponent } from "../supabase/data/publishedComponentService";
 import { deleteCustomComponent } from "../supabase/data/customComponentService";
+import { ReportTemplateModal } from "./FlagTemplateModal";
+import toast, { Toaster } from "react-hot-toast";
 
 type DashboardSection =
   | "new-chat"
@@ -467,6 +470,9 @@ export function Dashboard({
       fetchUserCustomComponents();
     }
   }, [currentUserId, activeSection]);
+  const [showReportTemplateModal, setShowReportTemplateModal] = useState(false);
+  const [selectedReportTemplate, setSelectedReportTemplate] =
+    useState<TemplateCardData | null>(null);
 
   useEffect(() => {
     const openSettingsTab = localStorage.getItem("open_account_settings");
