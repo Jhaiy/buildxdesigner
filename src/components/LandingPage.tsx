@@ -21,6 +21,8 @@ interface LandingPageProps {
 }
 
 const ONBOARDING_SESSION_INTENT_KEY = 'buildxdesigner:auth-intent';
+const LANDING_PAGE_REVIEW_SUBMITTED_KEY = 'buildxdesigner:landing-review-submitted';
+const REVIEW_PREVIEW_LIMIT = 2;
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -30,6 +32,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
   const [reviewsLoading, setReviewsLoading] = useState(true);
   const [reviewsError, setReviewsError] = useState('');
   const [showReviewPrompt, setShowReviewPrompt] = useState(false);
+   const [showAllReviews, setShowAllReviews] = useState(false);
+  const [hasSubmittedReview, setHasSubmittedReview] = useState(false);
   const [reviewerName, setReviewerName] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
@@ -50,6 +54,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
   useAuthRedirect(onEnterEditor);
 
    useEffect(() => {
+        setHasSubmittedReview(sessionStorage.getItem(LANDING_PAGE_REVIEW_SUBMITTED_KEY) === 'true');
     const loadReviews = async () => {
       setReviewsLoading(true);
 
@@ -214,8 +219,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
     }
 
     if (data) {
-      setReviews((prev) => [data, ...prev].slice(0, 6));
+      setReviews((prev) => [data, ...prev]);
     }
+
+    sessionStorage.setItem(LANDING_PAGE_REVIEW_SUBMITTED_KEY, 'true');
+    setHasSubmittedReview(true);
 
     setReviewerName('');
     setReviewRating(5);
@@ -252,6 +260,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
       day: 'numeric',
       year: 'numeric',
     });
+
+     const visibleReviews = showAllReviews ? reviews : reviews.slice(0, REVIEW_PREVIEW_LIMIT);
+  const shouldShowSeeAllReviews = reviews.length > REVIEW_PREVIEW_LIMIT && !showAllReviews;
+
 
   return (
     <div className="min-h-screen landing-theme-bg">
@@ -670,37 +682,52 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
               ))}
             </div>
           ) : reviews.length > 0 ? (
-            <motion.div
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true }}
-              variants={staggerChildren}
-              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"
-            >
-              {reviews.map((review, index) => (
-                <motion.div
-                  key={review.id}
-                  variants={fadeInUp}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <Card className="h-full bg-white/90 backdrop-blur-sm border-2 border-gray-200 hover:border-blue-300 transition-all duration-300 hover:shadow-lg">
-                    <CardContent className="p-8">
-                      <div className="flex items-center justify-between mb-4 gap-3">
-                        <div className="flex gap-1">
-                          {renderStars(review.rating)}
+             <>
+              <motion.div
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true }}
+                variants={staggerChildren}
+                className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"
+              >
+                {visibleReviews.map((review, index) => (
+                  <motion.div
+                    key={review.id}
+                    variants={fadeInUp}
+                    transition={{ delay: index * 0.1 }}
+                  >
+                    <Card className="h-full bg-white/90 backdrop-blur-sm border-2 border-gray-200 hover:border-blue-300 transition-all duration-300 hover:shadow-lg">
+                      <CardContent className="p-8">
+                        <div className="flex items-center justify-between mb-4 gap-3">
+                          <div className="flex gap-1">
+                            {renderStars(review.rating)}
+                          </div>
+                          <span className="text-xs text-gray-500 whitespace-nowrap">{formatReviewDate(review.created_at)}</span>
+
                         </div>
                         <span className="text-xs text-gray-500 whitespace-nowrap">{formatReviewDate(review.created_at)}</span>
-                      </div>
                       <p className="text-gray-600 mb-6 leading-relaxed">"{review.comment}"</p>
-                      <div>
-                        <div className="font-semibold text-gray-900">{review.reviewer_name || 'Anonymous'}</div>
-                        <div className="text-blue-600 text-sm">Community Review</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </motion.div>
+                        <div>
+                          <div className="font-semibold text-gray-900">{review.reviewer_name || 'Anonymous'}</div>
+                          <div className="text-blue-600 text-sm">Community Review</div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </motion.div>
+              {shouldShowSeeAllReviews && (
+                <div className="mt-10 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllReviews(true)}
+                    className="text-sm font-semibold text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+                  >
+                    See all reviews
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
             <Card className="bg-white/90 backdrop-blur-sm border-2 border-dashed border-blue-200">
               <CardContent className="p-10 text-center">
@@ -1007,42 +1034,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
               </p>
               {/* Social Media Links */}
               <div className="flex space-x-3">
-                <a
-                  href="https://facebook.com/buildxdesigner"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-10 h-10 bg-white hover:bg-blue-600 border-2 border-gray-200 hover:border-blue-600 rounded-lg flex items-center justify-center transition-all duration-300 group shadow-sm hover:shadow-md"
-                  aria-label="Facebook"
-                >
-                  <Facebook className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors" />
-                </a>
-                <a
-                  href="https://instagram.com/buildxdesigner"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-10 h-10 bg-white hover:bg-pink-600 border-2 border-gray-200 hover:border-pink-600 rounded-lg flex items-center justify-center transition-all duration-300 group shadow-sm hover:shadow-md"
-                  aria-label="Instagram"
-                >
-                  <Instagram className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors" />
-                </a>
-                <a
-                  href="https://twitter.com/buildxdesigner"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-10 h-10 bg-white hover:bg-blue-400 border-2 border-gray-200 hover:border-blue-400 rounded-lg flex items-center justify-center transition-all duration-300 group shadow-sm hover:shadow-md"
-                  aria-label="Twitter"
-                >
-                  <Twitter className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors" />
-                </a>
-                <a
-                  href="https://linkedin.com/company/buildxdesigner"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-10 h-10 bg-white hover:bg-blue-700 border-2 border-gray-200 hover:border-blue-700 rounded-lg flex items-center justify-center transition-all duration-300 group shadow-sm hover:shadow-md"
-                  aria-label="LinkedIn"
-                >
-                  <Linkedin className="w-5 h-5 text-gray-600 group-hover:text-white transition-colors" />
-                </a>
+               
+               
                 <a
                   href="https://youtube.com/@buildxdesigner"
                   target="_blank"
@@ -1112,23 +1105,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
               </ul>
             </motion.div>
 
-            {/* Resources & Help */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-            >
-              <h3 className="font-semibold text-gray-900 mb-4">Resources</h3>
-              <ul className="space-y-3">
-              
-               
-               
-              
-              
-               
-              </ul>
-            </motion.div>
+           
 
             {/* Company */}
             <motion.div
@@ -1181,7 +1158,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
           >
             <div className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
               <p className="text-gray-600 text-sm text-center md:text-left">
-                © 2025 BuildX Designer. All rights reserved. Empowering creators worldwide.
+                © 2026 BuildX Designer. All rights reserved. Empowering creators worldwide.
               </p>
               <div className="flex items-center space-x-6">
                 <a
@@ -1214,9 +1191,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
         </div>
       </footer>
 
+          {!hasSubmittedReview && (
         <div className="fixed bottom-4 right-4 z-[60] w-[calc(100vw-2rem)] max-w-sm sm:bottom-6 sm:right-6 sm:w-full lg:right-8">
-        {showReviewPrompt ? (
-           <Card className="w-full border-2 border-blue-200 bg-white/95 shadow-2xl backdrop-blur-md">
+          {showReviewPrompt ? (
+          <Card className="w-full border-2 border-blue-200 bg-white/95 shadow-2xl backdrop-blur-md">
             <CardHeader className="pb-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1303,8 +1281,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
               Add a review
             </Button>
           </div>
-        )}
-      </div>
+       )}
+        </div>
+      )}
 
       {/* Auth Modal */}
       <AuthModal
