@@ -19,8 +19,7 @@ import {
   Files, Cpu, ExternalLink
 } from "lucide-react"
 import { toast } from "sonner"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { okaidia } from "react-syntax-highlighter/dist/esm/styles/prism"
+import Editor from "@monaco-editor/react"
 import { generateProjectFiles, slugify } from "../lib/code-generator"
 
 // --- TYPES ---
@@ -72,17 +71,13 @@ interface FileCreatorModalProps {
   onCreateFile: (path: string, content: string) => void
 }
 
-// --- VS CODE DARK MODERN THEME ---
-const customSyntaxTheme = {
-  ...okaidia,
-  comment:     { color: "#6a9955", fontStyle: "italic" },
-  punctuation: { color: "#d4d4d4" },
-  property:    { color: "#9cdcfe" },
-  tag:         { color: "#569cd6" },
-  string:      { color: "#ce9178" },
-  function:    { color: "#dcdcaa" },
-  keyword:     { color: "#c586c0" },
-}
+// --- MONACO EDITOR THEME OPTIONS ---
+const MONACO_THEMES = [
+  { value: "vs-dark", label: "Dark", icon: "🌙" },
+  { value: "vs", label: "Light", icon: "☀️" },
+  { value: "hc-black", label: "High Contrast", icon: "🔳" },
+  { value: "hc-light", label: "High Contrast Light", icon: "🔲" },
+]
 
 const FILE_TEMPLATES: Record<string, (name: string) => string> = {
   php:  (name) => `<?php\n// Backend logic for ${name}\nrequire_once __DIR__ . '/../lib/supabase.php';\n\n// Add your logic here\n`,
@@ -408,25 +403,29 @@ return (
             </Button>
           </div>
 
-          <div className="flex-1 overflow-auto min-h-0" style={{ backgroundColor: "#1e1e1e" }}>
-            <SyntaxHighlighter
+          <div className="flex-1 overflow-auto min-h-0 bg-[#1e1e1e]">
+            <Editor
+              height="100%"
               language={
                 selectedFile.endsWith(".css") ? "css"
                 : selectedFile.endsWith(".js") ? "javascript"
-                : selectedFile.endsWith(".sql") ? "sql"
+                : selectedFile.endsWith(".html") ? "html"
+                : selectedFile.endsWith(".php") ? "php"
+                : selectedFile.endsWith(".json") ? "json"
+                : selectedFile.endsWith(".md") ? "markdown"
                 : "php"
               }
-              style={okaidia}
-              showLineNumbers
-              customStyle={{
-                margin: 0, padding: "24px",
-                backgroundColor: "#1e1e1e",
-                fontSize: "13px", lineHeight: "1.6",
-                minHeight: "100%", width: "100%",
+              value={effectiveFiles[selectedFile] || "// No content"}
+              theme="vs-dark"
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                fontSize: 13,
+                lineNumbers: "on",
+                padding: { top: 24, bottom: 24 },
               }}
-            >
-              {effectiveFiles[selectedFile] || "// No content"}
-            </SyntaxHighlighter>
+            />
           </div>
         </div>
       </div>
@@ -726,18 +725,28 @@ export function CodeViewEditor({
               className="absolute inset-0 w-full h-full resize-none bg-transparent text-[#d4d4d4] font-mono text-[13px] leading-relaxed p-6 outline-none"
             />
           ) : (
-            <SyntaxHighlighter
-              language={syntaxLang}
-              style={customSyntaxTheme}
-              showLineNumbers
-              customStyle={{
-                margin: 0, padding: "24px",
-                backgroundColor: "transparent",
-                fontSize: "13px", lineHeight: "1.6", height: "100%",
+            <Editor
+              height="100%"
+              language={
+                selectedFile.endsWith(".css") ? "css"
+                : selectedFile.endsWith(".js") ? "javascript"
+                : selectedFile.endsWith(".html") ? "html"
+                : selectedFile.endsWith(".php") ? "php"
+                : selectedFile.endsWith(".json") ? "json"
+                : selectedFile.endsWith(".md") ? "markdown"
+                : "php"
+              }
+              value={readOnlyContent || "// Select a file to view source"}
+              theme="vs-dark"
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                fontSize: 13,
+                lineNumbers: "on",
+                padding: { top: 24, bottom: 24 },
               }}
-            >
-              {readOnlyContent || "// Select a file to view source"}
-            </SyntaxHighlighter>
+            />
           )}
         </div>
       </div>
