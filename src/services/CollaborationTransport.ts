@@ -46,6 +46,39 @@ export function initializeCollaborationTransport(
   let awarenessTimeout: ReturnType<typeof setTimeout> | null = null;
   let pendingUpdates: Uint8Array[] = [];
 
+  const chunkBuffers = new Map<string, (string | null)[]>();
+
+  const handleChunkMessage = (message: any) => {
+    if (!message?.data || isClosed) return;
+
+    const { id, index, total, data } = message.data;
+
+    if (!chunkBuffers.has(id)) {
+      chunkBuffers.set(id, new Array(total).fill(null));
+      // Cleanup incomplete chunks after 10 seconds to avoid memory leaks
+      setTimeout(() => {
+        chunkBuffers.delete(id);
+      }, 10000);
+    }
+
+    const buffer = chunkBuffers.get(id);
+    if (!buffer) return;
+
+    buffer[index] = data;
+
+    if (buffer.every((chunk) => chunk !== null)) {
+      chunkBuffers.delete(id);
+      const fullData = buffer.join("");
+
+      const targetName = message.name.replace("-chunk", "");
+      if (targetName === "yjs-update" || targetName === "yjs-sync") {
+        handleRemoteUpdate({ data: fullData });
+      } else if (targetName === "yjs-awareness") {
+        handleRemoteAwareness({ data: fullData });
+      }
+    }
+  };
+
   client.connection.on((stateChange) => {
     console.log("[ably connection]", {
       current: stateChange.current,
@@ -91,7 +124,23 @@ export function initializeCollaborationTransport(
   const safePublish = async (name: string, data: any) => {
     if (isClosed || !isReady) return;
     try {
-      await channel.publish(name, data);
+      if (typeof data === "string" && data.length > 50000) {
+        const chunkSize = 50000;
+        const totalChunks = Math.ceil(data.length / chunkSize);
+        const chunkId = Math.random().toString(36).substring(2, 9);
+
+        for (let i = 0; i < totalChunks; i++) {
+          const chunk = data.substring(i * chunkSize, (i + 1) * chunkSize);
+          await channel.publish(`${name}-chunk`, {
+            id: chunkId,
+            index: i,
+            total: totalChunks,
+            data: chunk,
+          });
+        }
+      } else {
+        await channel.publish(name, data);
+      }
     } catch (error) {
       if (!isClosed) {
         console.warn(`Failed to publish ${name}:`, error);
@@ -227,6 +276,10 @@ export function initializeCollaborationTransport(
       channel.subscribe("yjs-sync", handleRemoteUpdate as any);
       channel.subscribe("yjs-request-sync", handleSyncRequest as any);
       channel.subscribe("yjs-awareness", handleRemoteAwareness as any);
+      
+      channel.subscribe("yjs-update-chunk", handleChunkMessage as any);
+      channel.subscribe("yjs-sync-chunk", handleChunkMessage as any);
+      channel.subscribe("yjs-awareness-chunk", handleChunkMessage as any);
 
       await channel.attach();
       if (isClosed) return;
@@ -269,6 +322,10 @@ export function initializeCollaborationTransport(
       channel.unsubscribe("yjs-sync", handleRemoteUpdate as any);
       channel.unsubscribe("yjs-request-sync", handleSyncRequest as any);
       channel.unsubscribe("yjs-awareness", handleRemoteAwareness as any);
+      
+      channel.unsubscribe("yjs-update-chunk", handleChunkMessage as any);
+      channel.unsubscribe("yjs-sync-chunk", handleChunkMessage as any);
+      channel.unsubscribe("yjs-awareness-chunk", handleChunkMessage as any);
     } catch {}
 
     try {
