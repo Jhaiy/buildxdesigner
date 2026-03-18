@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Code2, Zap, Download, Database, Shield, Users, ChevronRight, Star, Check, Sparkles, ArrowRight, Lock, Globe, Smartphone, Palette, Moon, Sun, Laptop, BarChart3, Monitor, Clock, CheckCircle, X, Menu, Mail, Phone, MapPin, Send, Facebook, Instagram, Twitter, Linkedin, Youtube, Github } from 'lucide-react';
+import { Code2, Zap, Download, Database, Shield, Users, ChevronRight, Star, Check, Sparkles, ArrowRight, Lock, Globe, Palette, Moon, Sun, Laptop, BarChart3, Monitor, CheckCircle, X, Menu, Mail, Phone, MapPin, Send, Facebook, Instagram, Twitter, Linkedin, Youtube, Github } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -12,6 +12,7 @@ import { DragDropAnimation } from './DragDropAnimation';
 import logoIcon from '../assets/3783c8fc9c2bbb9005e59c39e377b8d4ab7a0e4b.png';
 import aboutImage from '../assets/6ee6af225d3c66afa5aee3a1718a22ba31c70978.png';
 import { getSupabaseSession } from '../supabase/auth/authService';
+import { createLandingPageReview, fetchLandingPageReviews, LandingPageReview } from '../supabase/data/landingReviews';
 import { sendEmail, emailResponse } from './services/email.service';
 import toast, { Toaster } from 'react-hot-toast';
 
@@ -25,7 +26,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authType, setAuthType] = useState<'login' | 'signup'>('login');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
+ const [reviews, setReviews] = useState<LandingPageReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [reviewsError, setReviewsError] = useState('');
+  const [showReviewPrompt, setShowReviewPrompt] = useState(false);
+  const [reviewerName, setReviewerName] = useState('');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const handleAuth = (type: 'login' | 'signup') => {
     setAuthType(type);
     setShowAuthModal(true);
@@ -40,6 +48,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
   };
 
   useAuthRedirect(onEnterEditor);
+
+   useEffect(() => {
+    const loadReviews = async () => {
+      setReviewsLoading(true);
+
+      const { data, error } = await fetchLandingPageReviews();
+
+      if (error) {
+        console.error('Error loading landing page reviews:', error);
+        setReviews([]);
+        setReviewsError('Reviews will appear here after the Supabase reviews table is created.');
+      } else {
+        setReviews(data ?? []);
+        setReviewsError('');
+      }
+
+      setReviewsLoading(false);
+    };
+
+    loadReviews();
+  }, []);
 
   const handleStartBuilding = async () => {
     
@@ -94,41 +123,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
   ];
 
   const stats = [
-    { icon: Users, number: '50,000+', label: 'Active Creators' },
-    { icon: Globe, number: '1M+', label: 'Websites Built' },
-    { icon: Star, number: '4.9/5', label: 'User Rating' },
-    { icon: BarChart3, number: '99.9%', label: 'Uptime' }
+    { icon: Users, number: '100+', label: 'Active Creators' },
+    { icon: Globe, number: '20+', label: 'Websites Built' },
+    { icon: Star, number: '4.5/5', label: 'User Rating' },
+    { icon: BarChart3, number: '90%', label: 'Uptime' }
   ];
 
-  const testimonials = [
-    {
-      name: 'Sarah Chen',
-      role: 'UI/UX Designer',
-      company: 'TechFlow',
-      content: 'BuildX Designer has revolutionized how I prototype and deliver designs. The code export feature saves me hours of development time.',
-      rating: 5
-    },
-    {
-      name: 'Mike Rodriguez',
-      role: 'Small Business Owner',
-      company: 'Local Cafe',
-      content: 'I built my cafe\'s website in just one afternoon. The templates are beautiful and the interface is so easy to use.',
-      rating: 5
-    },
-    {
-      name: 'Alex Thompson',
-      role: 'Freelance Developer',
-      company: 'DevStudio',
-      content: 'The clean code output is impressive. I can use BuildX Designer for rapid prototyping and then enhance the exported code.',
-      rating: 5
-    }
-  ];
+  
 
   const features = [
     {
-      icon: Smartphone,
-      title: 'Mobile-First Design',
-      description: 'Every website is automatically optimized for mobile devices with responsive breakpoints.',
+      icon: Sparkles,
+      title: 'AI Mentor',
+      description: 'Get guided design suggestions, smart recommendations, and support as you build each section.',
     },
     {
       icon: Monitor,
@@ -136,9 +143,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
       description: 'Advanced desktop layouts with sophisticated grid systems and interactive elements.',
     },
     {
-      icon: Clock,
-      title: 'Lightning Fast',
-      description: 'Optimized code generation ensures your websites load quickly and perform efficiently.',
+      icon: Code2,
+      title: 'Code Generation',
+      description: 'Generate clean, production-ready code for your websites in just a few clicks.',
     }
   ];
 
@@ -178,6 +185,73 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
       toast.error(errorMessage);
     }
   }
+
+   async function handleSubmitReview(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    if (!reviewComment.trim()) {
+      toast.error('Please add a short review comment.');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+
+    const { data, error } = await createLandingPageReview({
+      reviewer_name: reviewerName,
+      rating: reviewRating,
+      comment: reviewComment,
+    });
+
+    if (error) {
+      console.error('Error saving landing page review:', error);
+      toast.error(
+        error.includes('relation') || error.includes('does not exist')
+          ? 'Please run the Supabase SQL first to create the reviews table.'
+          : error,
+      );
+      setIsSubmittingReview(false);
+      return;
+    }
+
+    if (data) {
+      setReviews((prev) => [data, ...prev].slice(0, 6));
+    }
+
+    setReviewerName('');
+    setReviewRating(5);
+    setReviewComment('');
+    setShowReviewPrompt(false);
+    setReviewsError('');
+    setIsSubmittingReview(false);
+    toast.success('Thanks for sharing your review!');
+  }
+
+  const renderStars = (rating: number, interactive = false) =>
+    Array.from({ length: 5 }).map((_, index) => {
+      const starValue = index + 1;
+      const active = starValue <= rating;
+
+      return (
+        <button
+          key={starValue}
+          type={interactive ? 'button' : undefined}
+          onClick={interactive ? () => setReviewRating(starValue) : undefined}
+          disabled={!interactive}
+          className={interactive ? 'transition-transform hover:scale-110 disabled:cursor-default' : 'cursor-default'}
+        >
+          <Star
+            className={`w-5 h-5 ${active ? 'text-yellow-400 fill-current' : 'text-gray-300'}`}
+          />
+        </button>
+      );
+    });
+
+  const formatReviewDate = (date: string) =>
+    new Date(date).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
 
   return (
     <div className="min-h-screen landing-theme-bg">
@@ -555,7 +629,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
         </div>
       </section>
 
-      {/* Testimonials Section */}
+      {/* Reviews Section */}
       <section id="testimonials" className="py-12 md:py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-gray-50 via-blue-50 to-blue-100">
         <div className="max-w-7xl mx-auto">
           <motion.div
@@ -566,44 +640,77 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
             className="text-center mb-16"
           >
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Loved by Creators Worldwide
+             Reviews from the BuildX Designer Community
             </h2>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              See what our community of designers, developers, and business owners have to say
+              Live feedback so visitors can see what builders are saying right now.
             </p>
           </motion.div>
 
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true }}
-            variants={staggerChildren}
-            className="grid grid-cols-1 md:grid-cols-3 gap-8"
-          >
-            {testimonials.map((testimonial, index) => (
-              <motion.div
-                key={index}
-                variants={fadeInUp}
-                transition={{ delay: index * 0.1 }}
-              >
-                <Card className="h-full bg-white/90 backdrop-blur-sm border-2 border-gray-200 hover:border-blue-300 transition-all duration-300 hover:shadow-lg">
-                  <CardContent className="p-8">
-                    <div className="flex mb-4">
-                      {[...Array(testimonial.rating)].map((_, i) => (
-                        <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />
+           {reviewsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <Card
+                  key={index}
+                  className="h-full bg-white/90 backdrop-blur-sm border-2 border-gray-200"
+                >
+                  <CardContent className="p-8 space-y-4">
+                    <div className="flex gap-2">
+                      {Array.from({ length: 5 }).map((__, starIndex) => (
+                        <div key={starIndex} className="w-5 h-5 rounded-full bg-gray-200 animate-pulse" />
                       ))}
                     </div>
-                    <p className="text-gray-600 mb-6 leading-relaxed">"{testimonial.content}"</p>
-                    <div>
-                      <div className="font-semibold text-gray-900">{testimonial.name}</div>
-                      <div className="text-blue-600">{testimonial.role}</div>
-                      <div className="text-gray-500">{testimonial.company}</div>
+                    <div className="space-y-2">
+                      <div className="h-4 bg-gray-200 rounded animate-pulse" />
+                      <div className="h-4 bg-gray-200 rounded animate-pulse" />
+                      <div className="h-4 bg-gray-200 rounded w-2/3 animate-pulse" />
                     </div>
                   </CardContent>
                 </Card>
-              </motion.div>
-            ))}
-          </motion.div>
+              ))}
+            </div>
+          ) : reviews.length > 0 ? (
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+              variants={staggerChildren}
+              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8"
+            >
+              {reviews.map((review, index) => (
+                <motion.div
+                  key={review.id}
+                  variants={fadeInUp}
+                  transition={{ delay: index * 0.1 }}
+                >
+                  <Card className="h-full bg-white/90 backdrop-blur-sm border-2 border-gray-200 hover:border-blue-300 transition-all duration-300 hover:shadow-lg">
+                    <CardContent className="p-8">
+                      <div className="flex items-center justify-between mb-4 gap-3">
+                        <div className="flex gap-1">
+                          {renderStars(review.rating)}
+                        </div>
+                        <span className="text-xs text-gray-500 whitespace-nowrap">{formatReviewDate(review.created_at)}</span>
+                      </div>
+                      <p className="text-gray-600 mb-6 leading-relaxed">"{review.comment}"</p>
+                      <div>
+                        <div className="font-semibold text-gray-900">{review.reviewer_name || 'Anonymous'}</div>
+                        <div className="text-blue-600 text-sm">Community Review</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </motion.div>
+          ) : (
+            <Card className="bg-white/90 backdrop-blur-sm border-2 border-dashed border-blue-200">
+              <CardContent className="p-10 text-center">
+                <h3 className="text-2xl font-semibold text-gray-900 mb-3">No reviews yet</h3>
+                <p className="text-gray-600 max-w-2xl mx-auto">
+                  {reviewsError || 'Be the first to leave a review.'}
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </section>
 
@@ -648,14 +755,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
                 </div>
               </div>
               
-              <Button
-                size="lg"
-                onClick={onEnterEditor}
-                className="group bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-300"
-              >
-                Explore the Editor
-                <ChevronRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </Button>
+             
             </motion.div>
             
             <motion.div
@@ -985,22 +1085,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
                     Features
                   </a>
                 </li>
-                <li>
-                  <button
-                    onClick={onEnterEditor}
-                    className="text-gray-600 hover:text-blue-600 transition-colors text-left"
-                  >
-                    Templates
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={onEnterEditor}
-                    className="text-gray-600 hover:text-blue-600 transition-colors text-left"
-                  >
-                    Pricing
-                  </button>
-                </li>
+               
+               
                 <li>
                   <a
                     href="#testimonials"
@@ -1010,7 +1096,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
                     }}
                     className="text-gray-600 hover:text-blue-600 transition-colors cursor-pointer"
                   >
-                    Testimonials
+                    Reviews
                   </a>
                 </li>
                 <li>
@@ -1035,66 +1121,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
             >
               <h3 className="font-semibold text-gray-900 mb-4">Resources</h3>
               <ul className="space-y-3">
-                <li>
-                  <a
-                    href="https://docs.buildxdesigner.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Documentation
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://help.buildxdesigner.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Help Center
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://community.buildxdesigner.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Community
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://tutorials.buildxdesigner.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Tutorials
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://blog.buildxdesigner.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Blog
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://support.buildxdesigner.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Support
-                  </a>
-                </li>
+              
+               
+               
+              
+              
+               
               </ul>
             </motion.div>
 
@@ -1119,16 +1151,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
                     About Us
                   </a>
                 </li>
-                <li>
-                  <a
-                    href="https://careers.buildxdesigner.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Careers
-                  </a>
-                </li>
+               
                 <li>
                   <a
                     href="#contact"
@@ -1141,36 +1164,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
                     Contact
                   </a>
                 </li>
-                <li>
-                  <a
-                    href="https://buildxdesigner.com/privacy"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Privacy Policy
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://buildxdesigner.com/terms"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Terms of Service
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://buildxdesigner.com/cookies"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-600 hover:text-blue-600 transition-colors"
-                  >
-                    Cookie Policy
-                  </a>
-                </li>
+                
+               
+              
               </ul>
             </motion.div>
           </div>
@@ -1217,6 +1213,98 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onEnterEditor }) => {
           </motion.div>
         </div>
       </footer>
+
+      <div className="fixed bottom-5 right-5 z-50 w-[calc(100%-2.5rem)] max-w-sm">
+        {showReviewPrompt ? (
+          <Card className="border-2 border-blue-200 bg-white/95 shadow-2xl backdrop-blur-md">
+            <CardHeader className="pb-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg text-gray-900">Leave a review</CardTitle>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Rate your experience and share a quick comment.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowReviewPrompt(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmitReview} className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Your name <span className="text-gray-400">(optional)</span>
+                  </label>
+                  <Input
+                    value={reviewerName}
+                    onChange={(e) => setReviewerName(e.target.value)}
+                    placeholder="Anonymous"
+                    maxLength={60}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Rating
+                  </label>
+                  <div className="flex gap-1">
+                    {renderStars(reviewRating, true)}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Comment
+                  </label>
+                  <Textarea
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    placeholder="Tell visitors what you liked about BuildX Designer."
+                    className="min-h-[110px]"
+                    maxLength={280}
+                  />
+                  <p className="text-xs text-gray-400 mt-2 text-right">
+                    {reviewComment.length}/280
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingReview}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+                  >
+                    {isSubmittingReview ? 'Submitting...' : 'Submit review'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowReviewPrompt(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => setShowReviewPrompt(true)}
+              className="rounded-full px-5 py-6 shadow-2xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+            >
+              <Star className="w-4 h-4 mr-2 fill-current" />
+              Add a review
+            </Button>
+          </div>
+        )}
+      </div>
 
       {/* Auth Modal */}
       <AuthModal
