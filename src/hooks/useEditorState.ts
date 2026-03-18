@@ -72,10 +72,12 @@ function getInitialUserProjectConfig() {
   const url = localStorage.getItem("target_supabase_url");
   const key = localStorage.getItem("target_supabase_key");
   const resendKey = localStorage.getItem("target_resend_api_key");
+  const paymongoKey = localStorage.getItem("target_paymongo_key");  // ← add
   return {
     supabaseUrl: url || "",
     supabaseKey: key || "",
     resendApiKey: resendKey || "",
+    paymongoKey: paymongoKey || "",  // ← add
   };
 }
 
@@ -392,18 +394,17 @@ export function useEditorState() {
 
   // Listen for resend API key changes from Account Settings
   useEffect(() => {
-    const handleConfigUpdate = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.resendApiKey !== undefined) {
-        setState((prev) => ({
-          ...prev,
-          userProjectConfig: {
-            ...prev.userProjectConfig,
-            resendApiKey: detail.resendApiKey,
-          },
-        }));
-      }
-    };
+const handleConfigUpdate = (e: Event) => {
+  const detail = (e as CustomEvent).detail;
+  setState((prev) => ({
+    ...prev,
+    userProjectConfig: {
+      ...prev.userProjectConfig,
+      ...(detail?.resendApiKey !== undefined && { resendApiKey: detail.resendApiKey }),
+      ...(detail?.paymongoKey !== undefined && { paymongoKey: detail.paymongoKey }),  // ← add
+    },
+  }));
+};
     window.addEventListener("userProjectConfigUpdated", handleConfigUpdate);
     return () => {
       window.removeEventListener(
@@ -443,6 +444,31 @@ export function useEditorState() {
     };
     syncResendKeyFromProfile();
   }, []);
+
+useEffect(() => {
+  const syncPaymongoKeyFromProfile = async () => {
+    try {
+      const { data: { session } } = await getSupabaseSession();
+      if (session?.user) {
+        const metadata = session.user.user_metadata as Record<string, unknown>;
+        const paymongoKey = (metadata?.paymongo_key as string) || "";
+        if (paymongoKey) {
+          localStorage.setItem("target_paymongo_key", paymongoKey);
+          setState((prev) => ({
+            ...prev,
+            userProjectConfig: {
+              ...prev.userProjectConfig,
+              paymongoKey,
+            },
+          }));
+        }
+      }
+    } catch (err) {
+      // Non-critical — silently ignore
+    }
+  };
+  syncPaymongoKeyFromProfile();
+}, []);
 
   useEffect(() => {
     console.log("[view state]", {
@@ -942,25 +968,32 @@ export function useEditorState() {
     localStorage.setItem("fulldev-ai-project-name", name);
   };
 
-  const updateUserProjectConfig = (
-    url: string,
-    key: string,
-    resendKey?: string,
-  ) => {
-    const config = {
-      supabaseUrl: url,
-      supabaseKey: key,
-      resendApiKey: resendKey,
-    };
-    localStorage.setItem("target_supabase_url", url);
-    localStorage.setItem("target_supabase_key", key);
-    if (resendKey) {
-      localStorage.setItem("target_resend_api_key", resendKey);
-    } else {
-      localStorage.removeItem("target_resend_api_key");
-    }
-    setState((prev) => ({ ...prev, userProjectConfig: config }));
+const updateUserProjectConfig = (
+  url: string,
+  key: string,
+  resendKey?: string,
+  paymongoKey?: string,  // ← add
+) => {
+  const config = {
+    supabaseUrl: url,
+    supabaseKey: key,
+    resendApiKey: resendKey,
+    paymongoKey: paymongoKey,  // ← add
   };
+  localStorage.setItem("target_supabase_url", url);
+  localStorage.setItem("target_supabase_key", key);
+  if (resendKey) {
+    localStorage.setItem("target_resend_api_key", resendKey);
+  } else {
+    localStorage.removeItem("target_resend_api_key");
+  }
+  if (paymongoKey) {                                          // ← add
+    localStorage.setItem("target_paymongo_key", paymongoKey); // ← add
+  } else {                                                    // ← add
+    localStorage.removeItem("target_paymongo_key");           // ← add
+  }
+  setState((prev) => ({ ...prev, userProjectConfig: config }));
+};
 
   // ==================== TEMPLATE LOADING ====================
 

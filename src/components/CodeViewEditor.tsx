@@ -41,6 +41,12 @@ interface CodeViewEditorProps {
   activePageId: string
   onCodeChange?: (newComponents: ComponentData[]) => void
   onPageCreate?: (name: string, path: string) => void
+    userConfig?: {
+    paymongoKey?: string
+    resendApiKey?: string
+    supabaseUrl?: string
+    supabaseKey?: string
+  }
 }
 
 interface FileNode {
@@ -485,6 +491,7 @@ export function CodeViewEditor({
   activePageId,
   onCodeChange,
   onPageCreate,
+  userConfig,
 }: CodeViewEditorProps) {
   const [selectedFile, setSelectedFile]       = useState("")
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(["app", "app/api", "public", "config"]))
@@ -498,7 +505,10 @@ export function CodeViewEditor({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const generatedFiles  = useMemo(() => generateProjectFiles(components, pages, projectName), [components, pages, projectName])
+  const generatedFiles = useMemo(
+  () => generateProjectFiles(components, pages, projectName, userConfig),
+  [components, pages, projectName, userConfig]
+)
   const effectiveFiles  = useMemo<Record<string, string>>(() => ({ ...generatedFiles, ...fileOverrides, ...customFiles }), [generatedFiles, fileOverrides, customFiles])
 
   // Permissions logic

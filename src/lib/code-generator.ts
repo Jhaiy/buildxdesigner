@@ -631,6 +631,14 @@ export const generateProjectFiles = (
   components: ComponentData[],
   pages: any[],
   projectName: string,
+  userConfig?: {
+    paymongoKey?: string
+    resendApiKey?: string
+    supabaseUrl?: string
+    supabaseKey?: string
+    supabaseAnonKey?: string
+    supabaseServiceKey?: string
+  },
 ): Record<string, string> => {
   // Migrate all legacy timestamp IDs to readable names before generating any files
   const migratedComponents = migrateToReadableIds(components);
@@ -731,11 +739,20 @@ const files: Record<string, string> = {
     - Tablet: ≤${BREAKPOINTS.tablet}px
     - Mobile: ≤${BREAKPOINTS.mobile}px
     `,
-    "config/supabase.php": `<?php
-define('SUPABASE_URL', getenv('SUPABASE_URL') ?: 'https://your-project.supabase.co');
-define('SUPABASE_ANON_KEY', getenv('SUPABASE_ANON_KEY') ?: 'your-anon-key');
-define('SUPABASE_SERVICE_KEY', getenv('SUPABASE_SERVICE_KEY') ?: 'your-service-role-key');
+"config/supabase.php": `<?php
+define('SUPABASE_URL', '${userConfig?.supabaseUrl || "https://your-project.supabase.co"}');
+define('SUPABASE_ANON_KEY', '${userConfig?.supabaseKey || "your-anon-key"}');
+define('SUPABASE_SERVICE_KEY', '${userConfig?.supabaseServiceKey || "your-service-role-key"}');
 `,
+"config/paymongo.php": `<?php
+define('PAYMONGO_SECRET_KEY', '${userConfig?.paymongoKey || ""}');
+define('PAYMONGO_PUBLIC_KEY', '');
+`,
+
+"config/resend.php": `<?php
+define('RESEND_API_KEY', '${userConfig?.resendApiKey || ""}');
+`,
+
 
     "app/lib/supabase.php": `<?php
 require_once __DIR__ . '/../../config/supabase.php';

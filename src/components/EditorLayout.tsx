@@ -347,6 +347,12 @@ export function EditorLayout({
                         components={state.components}
                         projectName={state.projectName}
                         pages={state.pages}
+                        userConfig={{
+                          paymongoKey: state.userProjectConfig?.paymongoKey,
+                          resendApiKey: state.userProjectConfig?.resendApiKey,
+                          supabaseUrl: localStorage.getItem('target_supabase_url') ?? undefined,
+                          supabaseKey: localStorage.getItem('target_supabase_key') ?? undefined,
+                        }}
                         activePageId={state.activePageId}
                         onCodeChange={(newComponents) => {
                           if (!canEditProject) return;
