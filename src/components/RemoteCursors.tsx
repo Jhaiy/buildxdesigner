@@ -32,6 +32,7 @@ export function RemoteCursors({ cursors, zoom }: RemoteCursorsProps) {
             top: `${cursor.y}px`,
             transform: `scale(${Math.max(1, 1 / scale)})`,
             transformOrigin: "top left",
+            transition: "left 80ms cubic-bezier(0.2,0,0,1), top 80ms cubic-bezier(0.2,0,0,1)",
           }}
         >
           <div

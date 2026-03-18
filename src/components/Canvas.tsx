@@ -1615,6 +1615,7 @@ export function Canvas({
                     top: `${cursor.y}px`,
                     transform: "translate(-2px, -2px)",
                     overflow: "visible",
+                    transition: "left 80ms cubic-bezier(0.2,0,0,1), top 80ms cubic-bezier(0.2,0,0,1)",
                   }}
                 >
                   <svg

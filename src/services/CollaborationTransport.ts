@@ -239,7 +239,7 @@ export function initializeCollaborationTransport(
       } catch (error) {
         console.warn("Failed to encode awareness update:", error);
       }
-    }, 20);
+    }, 10);
   };
 
   const handleRemoteAwareness = (message: { data: string }) => {
@@ -276,7 +276,7 @@ export function initializeCollaborationTransport(
       channel.subscribe("yjs-sync", handleRemoteUpdate as any);
       channel.subscribe("yjs-request-sync", handleSyncRequest as any);
       channel.subscribe("yjs-awareness", handleRemoteAwareness as any);
-      
+
       channel.subscribe("yjs-update-chunk", handleChunkMessage as any);
       channel.subscribe("yjs-sync-chunk", handleChunkMessage as any);
       channel.subscribe("yjs-awareness-chunk", handleChunkMessage as any);
@@ -322,7 +322,7 @@ export function initializeCollaborationTransport(
       channel.unsubscribe("yjs-sync", handleRemoteUpdate as any);
       channel.unsubscribe("yjs-request-sync", handleSyncRequest as any);
       channel.unsubscribe("yjs-awareness", handleRemoteAwareness as any);
-      
+
       channel.unsubscribe("yjs-update-chunk", handleChunkMessage as any);
       channel.unsubscribe("yjs-sync-chunk", handleChunkMessage as any);
       channel.unsubscribe("yjs-awareness-chunk", handleChunkMessage as any);
