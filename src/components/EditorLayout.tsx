@@ -26,8 +26,6 @@ import { RightSidebar } from "./RightSidebar";
 import { EditorFooter } from "./EditorFooter";
 import { EditorTopBar } from "./EditorTopBar";
 import { TooltipProvider } from "./ui/tooltip";
-import { ResizeTooltip } from "./ResizeTooltip";
-import { EditTooltip } from "./EditTooltip";
 import {
   Dialog,
   DialogContent,
@@ -302,14 +300,16 @@ export function EditorLayout({
             )}
 
             <div
-              className={`flex-1 flex flex-col overflow-hidden bg-muted/20 ${state.isFullscreen ? "fullscreen-canvas" : ""}`}
+              className={`flex-1 flex flex-col overflow-hidden ${state.viewMode === "code" ? "bg-[#111111]" : "bg-muted/20"} ${state.isFullscreen ? "fullscreen-canvas" : ""}`}
             >
-              <div className="flex-1 flex overflow-hidden justify-center items-start p-6 custom-scrollbar bg-muted/10">
+              <div className={`flex-1 flex overflow-hidden justify-center items-start custom-scrollbar ${state.viewMode === "code" ? "p-0 bg-[#111111]" : "p-6 bg-muted/10"}`}>
                 <div
-                  className="bg-card shadow-2xl transition-all duration-300 ease-in-out h-full overflow-hidden border border-border rounded-lg relative"
+                  className="shadow-2xl transition-all duration-300 ease-in-out h-full overflow-hidden rounded-lg relative"
                   style={{
                     width: state.viewMode === "design" ? "1920px" : "100%",
                     maxWidth: state.viewMode === "design" ? "1920px" : "none",
+                    backgroundColor: state.viewMode === "code" ? "#111111" : undefined,
+                    border: state.viewMode === "code" ? "none" : "1px solid var(--border)",
                   }}
                 >
                   {state.viewMode === "design" && (
@@ -342,7 +342,7 @@ export function EditorLayout({
                   )}
 
                   {state.viewMode === "code" && (
-                    <div className="flex-1 flex flex-col h-full overflow-hidden bg-card">
+                    <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ backgroundColor: "#1e1e1e" }}>
                       <CodeViewEditor
                         components={state.components}
                         projectName={state.projectName}
@@ -352,6 +352,7 @@ export function EditorLayout({
                           resendApiKey: state.userProjectConfig?.resendApiKey,
                           supabaseUrl: state.userProjectConfig?.supabaseUrl || undefined,
                           supabaseKey: state.userProjectConfig?.supabaseKey || undefined,
+                          supabaseServiceKey: state.userProjectConfig?.supabaseServiceKey || undefined,
                         }}
                         activePageId={state.activePageId}
                         onCodeChange={(newComponents) => {
@@ -365,6 +366,22 @@ export function EditorLayout({
                               }
                             : undefined
                         }
+                        fileOverrides={state.fileOverrides || {}}
+                        onFileOverrideUpdate={(path, content) => {
+                          setState((prev) => ({
+                            ...prev,
+                            fileOverrides: { ...(prev.fileOverrides || {}), [path]: content },
+                            hasUnsavedChanges: true,
+                          }));
+                        }}
+                        customFiles={state.customFiles || {}}
+                        onCustomFileUpdate={(path, content) => {
+                          setState((prev) => ({
+                            ...prev,
+                            customFiles: { ...(prev.customFiles || {}), [path]: content },
+                            hasUnsavedChanges: true,
+                          }));
+                        }}
                       />
                     </div>
                   )}
@@ -594,10 +611,7 @@ export function EditorLayout({
             />
           )}
 
-          {state.components.length > 0 && <ResizeTooltip />}
-          {state.components.length === 0 && (
-            <EditTooltip isCanvasEmpty={true} />
-          )}
+
 
           {state.showAIAssistantModal && (
             <RightSidebar
