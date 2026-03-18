@@ -78,7 +78,8 @@ function getInitialUserProjectConfig() {
     supabaseUrl: url || "",
     supabaseKey: key || "",
     resendApiKey: resendKey || "",
-    paymongoKey: paymongoKey || "",  // ← add
+    paymongoKey: paymongoKey || "",
+    supabaseServiceKey: localStorage.getItem("target_supabase_service_key") || "",
   };
 }
 
@@ -402,7 +403,10 @@ const handleConfigUpdate = (e: Event) => {
     userProjectConfig: {
       ...prev.userProjectConfig,
       ...(detail?.resendApiKey !== undefined && { resendApiKey: detail.resendApiKey }),
-      ...(detail?.paymongoKey !== undefined && { paymongoKey: detail.paymongoKey }),  // ← add
+      ...(detail?.paymongoKey !== undefined && { paymongoKey: detail.paymongoKey }),
+      ...(detail?.supabaseUrl !== undefined && { supabaseUrl: detail.supabaseUrl }),
+      ...(detail?.supabaseKey !== undefined && { supabaseKey: detail.supabaseKey }),
+      ...(detail?.supabaseServiceKey !== undefined && { supabaseServiceKey: detail.supabaseServiceKey }),
     },
   }));
 };

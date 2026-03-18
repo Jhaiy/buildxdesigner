@@ -78,6 +78,7 @@ export interface EditorState {
   userProjectConfig: {
     supabaseUrl: string;
     supabaseKey: string;
+    supabaseServiceKey?: string;
     resendApiKey?: string;
     paymongoKey?: string;
   };
@@ -95,4 +96,6 @@ export interface EditorState {
   siteLogoUrl?: string;
   exportSnapshot: ComponentData[];
   customComponents?: any[];
+  fileOverrides?: Record<string, string>;
+  customFiles?: Record<string, string>;
 }

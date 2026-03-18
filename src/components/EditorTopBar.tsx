@@ -1512,7 +1512,13 @@ useEffect(() => {
                           e.stopPropagation();
                           localStorage.removeItem("target_supabase_url");
                           localStorage.removeItem("target_supabase_key");
+                          localStorage.removeItem("target_supabase_service_key");
                           setTargetSupabaseUrl(null);
+                          window.dispatchEvent(
+                            new CustomEvent("userProjectConfigUpdated", {
+                              detail: { supabaseUrl: "", supabaseKey: "", supabaseServiceKey: "" },
+                            }),
+                          );
                           window.location.reload();
                         }}
                         title="Disconnect Target"
@@ -1639,7 +1645,11 @@ useEffect(() => {
                             );
                             localStorage.setItem("target_supabase_url", newUrl);
                             localStorage.setItem("target_supabase_key", newKey);
-                            window.dispatchEvent(new CustomEvent("supabaseKeysUpdated"));
+                            window.dispatchEvent(
+                              new CustomEvent("userProjectConfigUpdated", {
+                                detail: { supabaseUrl: newUrl, supabaseKey: newKey },
+                              }),
+                            );
                             toast.success(
                               `Successfully connected to: ${newProjectId}`,
                               {
