@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Eye, Code, Save, Copy, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { MonacoGenAi } from './MonacoGenAi';
+import { getOpenRouterKey } from "../config/apiKeys"
 
 // Gemini API function
 const generateCodeWithGemini = async (
@@ -19,10 +20,17 @@ const generateCodeWithGemini = async (
   history: { role: 'user' | 'assistant', content: string }[] = []
 ): Promise<string> => {
   try {
+    const apiKey = getOpenRouterKey() || import.meta.env.GEMINI_2_5_FLASH || import.meta.env.GEMINI_25_FLASH || ""
+    
+    if (!apiKey) {
+      toast.error("API key not configured. Please set your OpenRouter or Gemini API key.")
+      return "Error: API key not configured"
+    }
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer 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`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'http://localhost:3000',
         'X-Title': 'BuildXdesigner',

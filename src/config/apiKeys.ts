@@ -3,7 +3,11 @@
 
 export function getGeminiKey(): string {
   // Read from environment variable first
-  const envKey = import.meta.env.VITE_GEMINI_API_KEY
+  // Handle both local (GEMINI_2.5_FLASH) and Vercel (GEMINI_25_FLASH) naming
+  const envKey = import.meta.env.VITE_GEMINI_API_KEY || 
+                 import.meta.env.GEMINI_2_5_FLASH || 
+                 import.meta.env.GEMINI_25_FLASH ||
+                 import.meta.env.GEMINI_API_KEY
   const storedKey = localStorage.getItem("gemini_api_key")
   return storedKey || envKey || ""
 }
@@ -15,12 +19,23 @@ export function getOpenAIKey(): string {
   return storedKey || envKey || ""
 }
 
+export function getOpenRouterKey(): string {
+  // Read from environment variable first
+  const envKey = import.meta.env.VITE_OPENROUTER_API_KEY
+  const storedKey = localStorage.getItem("openrouter_api_key")
+  return storedKey || envKey || ""
+}
+
 export function setGeminiKey(key: string): void {
   localStorage.setItem("gemini_api_key", key)
 }
 
 export function setOpenAIKey(key: string): void {
   localStorage.setItem("openai_api_key", key)
+}
+
+export function setOpenRouterKey(key: string): void {
+  localStorage.setItem("openrouter_api_key", key)
 }
 
 export function hasValidGeminiKey(): boolean {
@@ -30,5 +45,10 @@ export function hasValidGeminiKey(): boolean {
 
 export function hasValidOpenAIKey(): boolean {
   const key = getOpenAIKey()
+  return key !== ""
+}
+
+export function hasValidOpenRouterKey(): boolean {
+  const key = getOpenRouterKey()
   return key !== ""
 }
