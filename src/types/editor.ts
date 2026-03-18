@@ -79,6 +79,7 @@ export interface EditorState {
     supabaseUrl: string;
     supabaseKey: string;
     resendApiKey?: string;
+    paymongoKey?: string;
   };
   projectIsPublic: boolean | null;
   projectAnyoneCan: "view" | "edit";

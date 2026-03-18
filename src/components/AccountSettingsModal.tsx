@@ -190,7 +190,10 @@ export function AccountSettingsModal({
       // Notify editor state of config change
       window.dispatchEvent(
         new CustomEvent("userProjectConfigUpdated", {
-          detail: { resendApiKey: profileData.resend_api_key || "" },
+          detail: { 
+            resendApiKey: profileData.resend_api_key || "",
+            paymongoKey: profileData.paymongo_key || "",  // ← add
+          },
         }),
       );
     }
